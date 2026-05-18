@@ -21,7 +21,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         TExcluded: TryFrom<u64, Error: Display>,
     {
         TryFromOrderedStreamFuture {
-            stream: stream,
+            stream,
             builder: None,
         }
     }

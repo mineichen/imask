@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Add};
 
-use crate::{MetaRange, NonZeroRange, SignedNonZeroable};
+use crate::{MetaRange, NonZeroRange, RangeUnchecked, SignedNonZeroable};
 
 pub trait CreateRange: Sized {
     type Item;
@@ -87,7 +87,8 @@ impl<T: Copy + Debug + Ord> CreateRange for NonZeroRange<T> {
 
     #[inline]
     fn new_debug_checked_zeroable(start: Self::Item, end: Self::Item) -> Self {
-        NonZeroRange::new_unchecked(start..end)
+        debug_assert!(start < end);
+        NonZeroRange::new_unchecked(RangeUnchecked { start, end })
     }
 
     #[inline]

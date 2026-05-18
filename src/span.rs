@@ -6,14 +6,21 @@ use std::{
 use crate::{CreateRange, ImageDimension, NonZeroRange, UncheckedCast};
 
 mod clip;
+mod dilate;
 mod into_ranges;
+pub(crate) mod peekable;
 mod rect;
+mod subtract;
 mod union;
+mod union_all;
 
 pub use clip::*;
+pub use dilate::*;
 pub use into_ranges::*;
 pub use rect::*;
+pub use subtract::*;
 pub use union::*;
+pub use union_all::*;
 
 pub trait IntoSpanIter<T> {
     type Item;

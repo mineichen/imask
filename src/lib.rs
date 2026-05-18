@@ -6,6 +6,7 @@
 mod assert_sorted_iter;
 #[cfg(feature = "async-io")]
 mod async_io;
+mod checked_add_signed;
 mod create_range;
 mod map;
 mod non_zero;
@@ -21,6 +22,7 @@ use std::num::NonZero;
 pub use assert_sorted_iter::*;
 #[cfg(feature = "async-io")]
 pub use async_io::*;
+pub(crate) use checked_add_signed::CheckedAddSigned;
 pub use create_range::*;
 pub use map::*;
 pub use non_zero::*;

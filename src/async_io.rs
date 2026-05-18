@@ -386,9 +386,9 @@ impl<R: AsyncRead + Unpin> Future for HeaderReader<R> {
             this.reader,
             cx,
             &mut this.buf[..],
-            &mut this.pos,
+            this.pos,
         ))?;
-        Poll::Ready(Header::from_bytes(&this.buf))
+        Poll::Ready(Header::from_bytes(this.buf))
     }
 }
 

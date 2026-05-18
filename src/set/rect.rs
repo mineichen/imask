@@ -37,7 +37,7 @@ impl<R: CreateRange<Item: SignedNonZeroable + TryInto<u32, Error: Debug>>> Image
             x: 0,
             y: 0,
             width: self.width(),
-            height: height,
+            height,
         }
     }
 }

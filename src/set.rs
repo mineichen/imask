@@ -7,8 +7,8 @@ use std::{
 };
 
 use crate::{
-    CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span, SpanIntoRangesIter,
-    UncheckedCast, WithBounds, WithRoi, span,
+    CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span,
+    UncheckedCast, WithBounds, WithRoi,
 };
 #[cfg(feature = "range-set-blaze-0_5")]
 use num_traits::{CheckedSub, One, SaturatingSub, Zero};
@@ -66,6 +66,21 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::Union::new(self.into_iter(), other.into_iter())
     }
 
+    fn subtract<TOther: IntoIterator<Item = Span<T>>, T>(
+        self,
+        other: TOther,
+    ) -> crate::span::Subtract<Self::IntoIter, TOther::IntoIter> {
+        crate::span::Subtract::new(self.into_iter(), other.into_iter())
+    }
+
+    fn union_all<T>(self) -> crate::span::UnionAll<Self::Item>
+    where
+        T: Ord + Copy + std::fmt::Debug,
+        Self::Item: Iterator<Item = Span<T>>,
+    {
+        crate::span::UnionAll::new(self)
+    }
+
     fn try_clip_2d(
         self,
         roi: Rect<u32>,
@@ -97,7 +112,7 @@ pub trait ImaskSet: IntoIterator + Sized {
     where
         Self::Item: CreateRange<Item: Debug>,
     {
-        SanitizeSortedDisjoint::new(self.into_iter())
+        SanitizeSortedDisjoint::new(self)
     }
 
     fn with_roi(self, roi: Rect<u32>) -> WithRoi<Self::IntoIter> {
@@ -106,8 +121,27 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn with_bounds(self, width: NonZeroU32, height: NonZeroU32) -> WithBounds<Self::IntoIter> {
         WithBounds::new(self.into_iter(), width, height)
     }
+    fn dilate<T>(
+        self,
+        offset: <T as SignedNonZeroable>::NonZero,
+    ) -> crate::span::DilateSpanIter<Self::IntoIter, T>
+    where
+        T: Ord
+            + Copy
+            + Debug
+            + Add<Output = T>
+            + SaturatingSub<Output = T>
+            + crate::CheckedAddSigned
+            + One
+            + Zero
+            + SignedNonZeroable,
+        Self::IntoIter: Iterator<Item = Span<T>> + Clone + ImageDimension,
+    {
+        crate::span::DilateSpanIter::new(self.into_iter(), offset)
+    }
+
     #[cfg(feature = "range-set-blaze-0_5")]
-    fn dilate<'a>(
+    fn dilate_range<'a>(
         self,
         offset: <<Self::Item as CreateRange>::Item as SignedNonZeroable>::NonZero,
     ) -> DilateIter<'a, Self::Item>

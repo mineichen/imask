@@ -2,7 +2,7 @@ use std::{fmt::Debug, num::NonZeroU32, ops::Add};
 
 use num_traits::One;
 
-use crate::{ImageDimension, Rect, SignedNonZeroable, Span, UncheckedCast, span};
+use crate::{ImageDimension, Rect, SignedNonZeroable, Span, UncheckedCast};
 
 #[derive(Clone)]
 pub struct RectSpanIter<T> {

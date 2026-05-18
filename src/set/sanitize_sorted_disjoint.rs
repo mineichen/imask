@@ -39,15 +39,12 @@ pub struct SanitizeSortedDisjoint<I: Iterator<Item: CreateRange<Item: Debug>>> {
 }
 
 #[derive(Debug)]
+#[derive(Default)]
 enum SanitizeSortedDisjointState<TRange: CreateRange> {
     Pending(TRange),
     Error(SanitizeSortedDisjointError<TRange::Item>),
+    #[default]
     Fresh,
-}
-impl<TRange: CreateRange> Default for SanitizeSortedDisjointState<TRange> {
-    fn default() -> Self {
-        SanitizeSortedDisjointState::Fresh
-    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

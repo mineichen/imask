@@ -41,7 +41,7 @@ impl<TIncluded: UncheckedCast<u64>, TExcluded: UncheckedCast<u64>, TMeta: Debug>
         struct DebugIter<T>(T);
         impl<T: IntoIterator<Item: Debug> + Clone> Debug for DebugIter<T> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_list().entries(self.0.clone().into_iter()).finish()
+                f.debug_list().entries(self.0.clone()).finish()
             }
         }
 

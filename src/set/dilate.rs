@@ -70,8 +70,7 @@ where
                     let start = r.start().saturating_sub(&o_start);
                     Some(start..=end)
                 }))
-            })
-            .into_iter();
+            });
         let after = <TIter::Item as CreateRange>::Item::one()
             .iter_steps(offset)
             .map(|o| {
@@ -83,8 +82,7 @@ where
                     let end = r.end() + o_end;
                     start..=end
                 }))
-            })
-            .into_iter();
+            });
         let original = CheckSortedDisjoint::new(iter.clone().map(|r| {
             let one = <TIter::Item as CreateRange>::Item::one();
             let start = r.start();
@@ -192,7 +190,7 @@ mod tests {
         let bottom = 6 * 80 + 50..6 * 80 + 52;
         let data = [top, bottom].with_roi(Rect::new(0, 10, NONZERO_80, NONZERO_80));
         let data_dilate = data
-            .dilate(const { NonZeroU32::new(2).unwrap() })
+            .dilate_range(const { NonZeroU32::new(2).unwrap() })
             .collect::<Vec<_>>();
         let expected = (0..6)
             .map(|offset| (3 + offset) * 80 + 48..(3 + offset) * 80 + 54)

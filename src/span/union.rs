@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use super::peekable::Peekable;
 use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
 
 pub struct Union<TA: Iterator, TB: Iterator> {
@@ -52,21 +53,29 @@ fn extract<T: Ord + Copy + Debug>(
     let y = a.y;
     let start = a.x.start.min(b.x.start);
     let mut end = a.x.end.max(b.x.end);
+    let mut a_end = a.x.end;
+    let mut b_end = b.x.end;
 
     loop {
-        if let Some(next) = a_iter.peek() {
-            if next.y == y && next.x.start <= end {
-                end = end.max(a_iter.next().unwrap().x.end);
-                continue;
+        if a_end <= b_end {
+            match a_iter.peek() {
+                Some(next) if next.y == y && next.x.start <= end => {
+                    let consumed = a_iter.next().unwrap();
+                    a_end = consumed.x.end;
+                    end = end.max(a_end);
+                }
+                _ => break,
+            }
+        } else {
+            match b_iter.peek() {
+                Some(next) if next.y == y && next.x.start <= end => {
+                    let consumed = b_iter.next().unwrap();
+                    b_end = consumed.x.end;
+                    end = end.max(b_end);
+                }
+                _ => break,
             }
         }
-        if let Some(next) = b_iter.peek() {
-            if next.y == y && next.x.start <= end {
-                end = end.max(b_iter.next().unwrap().x.end);
-                continue;
-            }
-        }
-        break;
     }
 
     let x = NonZeroRange::new_debug_checked_zeroable(start, end);
@@ -86,43 +95,10 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
             (Some(next_a), Some(next_b)) => match next_a.y.cmp(&next_b.y) {
                 std::cmp::Ordering::Less => self.a.next(),
                 std::cmp::Ordering::Greater => self.b.next(),
-                std::cmp::Ordering::Equal if next_a.x.end <= next_b.x.start => self.a.next(),
-                std::cmp::Ordering::Equal if next_b.x.end <= next_a.x.start => self.b.next(),
+                std::cmp::Ordering::Equal if next_a.x.end < next_b.x.start => self.a.next(),
+                std::cmp::Ordering::Equal if next_b.x.end < next_a.x.start => self.b.next(),
                 std::cmp::Ordering::Equal => extract(&mut self.a, &mut self.b),
             },
-        }
-    }
-}
-
-#[derive(Clone)]
-struct Peekable<TInner: Iterator> {
-    parent: TInner,
-    pending: Option<TInner::Item>,
-}
-
-impl<TInner: Iterator> Peekable<TInner> {
-    fn next(&mut self) -> Option<TInner::Item> {
-        let mut pending = self.parent.next();
-
-        #[cfg(debug_assertions)]
-        {
-            if pending.is_some() {
-                assert!(
-                    self.pending.is_some(),
-                    "Expects, that peek() is called before"
-                );
-            }
-        }
-        std::mem::swap(&mut pending, &mut self.pending);
-        pending
-    }
-    fn peek(&mut self) -> Option<&TInner::Item> {
-        match &mut self.pending {
-            Some(x) => Some(x),
-            r => {
-                *r = self.parent.next();
-                r.as_ref()
-            }
         }
     }
 }
@@ -230,6 +206,17 @@ mod tests {
             test_both_ways(
                 std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
                 std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
+            )
+        );
+    }
+
+    #[test]
+    fn combine_touching() {
+        assert_eq!(
+            vec![Span::new(NonZeroRange::try_from(0..20).unwrap(), 0)],
+            test_both_ways(
+                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
+                std::iter::once(Span::new(NonZeroRange::try_from(10..20).unwrap(), 0)),
             )
         );
     }

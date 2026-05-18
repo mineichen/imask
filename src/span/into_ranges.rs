@@ -34,7 +34,7 @@ where
             .expect("Cant calculate static offset");
         let bounds = bounds.try_cast::<TOut::Item>().unwrap();
         Self {
-            parent: parent,
+            parent,
             bounds,
             static_offset,
             unreleased: None,
