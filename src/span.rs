@@ -25,8 +25,8 @@ pub trait IntoSpanIter<T> {
 /// x_end is exclusive
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Span<T> {
-    pub x: NonZeroRange<T>,
     pub y: T,
+    pub x: NonZeroRange<T>,
 }
 
 impl<T: Debug + Ord + Copy> Span<T> {

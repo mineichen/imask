@@ -43,34 +43,53 @@ impl<TA: Iterator, TB: Iterator> Union<TA, TB> {
     }
 }
 
+fn extract<T: Ord + Copy + Debug>(
+    a_iter: &mut Peekable<impl Iterator<Item = Span<T>>>,
+    b_iter: &mut Peekable<impl Iterator<Item = Span<T>>>,
+) -> Option<Span<T>> {
+    let a = a_iter.next().unwrap();
+    let b = b_iter.next().unwrap();
+    let y = a.y;
+    let start = a.x.start.min(b.x.start);
+    let mut end = a.x.end.max(b.x.end);
+
+    loop {
+        if let Some(next) = a_iter.peek() {
+            if next.y == y && next.x.start <= end {
+                end = end.max(a_iter.next().unwrap().x.end);
+                continue;
+            }
+        }
+        if let Some(next) = b_iter.peek() {
+            if next.y == y && next.x.start <= end {
+                end = end.max(b_iter.next().unwrap().x.end);
+                continue;
+            }
+        }
+        break;
+    }
+
+    let x = NonZeroRange::new_debug_checked_zeroable(start, end);
+    Some(Span { x, y })
+}
+
 impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy + Debug> Iterator
     for Union<TA, TB>
 {
     type Item = Span<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let peek_a = self.a.peek();
-        let peek_b = self.b.peek();
-        let Some(next_a) = peek_a else {
-            return self.b.next();
-        };
-        let Some(next_b) = peek_b else {
-            return self.a.next();
-        };
-
-        match next_a.y.cmp(&next_b.y) {
-            std::cmp::Ordering::Less => self.a.next(),
-            std::cmp::Ordering::Equal if next_a.x.end < next_b.x.start => self.a.next(),
-            std::cmp::Ordering::Equal if next_b.x.end < next_a.x.start => self.b.next(),
-            std::cmp::Ordering::Equal => {
-                let a = self.a.next().unwrap();
-                let b = self.b.next().unwrap();
-                let start = a.x.start.min(b.x.start);
-                let end = a.x.end.max(b.x.end);
-                let x = NonZeroRange::new_debug_checked_zeroable(start, end);
-                Some(Span { x, y: a.y })
-            }
-            std::cmp::Ordering::Greater => self.b.next(),
+        match (self.a.peek(), self.b.peek()) {
+            (None, None) => None,
+            (None, Some(_)) => self.b.next(),
+            (Some(_), None) => self.a.next(),
+            (Some(next_a), Some(next_b)) => match next_a.y.cmp(&next_b.y) {
+                std::cmp::Ordering::Less => self.a.next(),
+                std::cmp::Ordering::Greater => self.b.next(),
+                std::cmp::Ordering::Equal if next_a.x.end <= next_b.x.start => self.a.next(),
+                std::cmp::Ordering::Equal if next_b.x.end <= next_a.x.start => self.b.next(),
+                std::cmp::Ordering::Equal => extract(&mut self.a, &mut self.b),
+            },
         }
     }
 }
@@ -142,15 +161,34 @@ mod tests {
         );
     }
     #[test]
+    fn combine_contained_sameline() {
+        assert_eq!(
+            vec![Span::new(NonZeroRange::try_from(0..22).unwrap(), 0)],
+            test_both_ways(
+                [
+                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
+                    Span::new(NonZeroRange::try_from(12..22).unwrap(), 0)
+                ],
+                [
+                    Span::new(NonZeroRange::try_from(8..14).unwrap(), 0),
+                    Span::new(NonZeroRange::try_from(18..20).unwrap(), 0)
+                ],
+            )
+        );
+    }
+    #[test]
     fn combine_non_overlapping_sameline() {
         assert_eq!(
-            vec![
-                Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
-                Span::new(NonZeroRange::try_from(11..12).unwrap(), 0)
-            ],
+            vec![Span::new(NonZeroRange::try_from(0..22).unwrap(), 0)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(11..12).unwrap(), 0)),
+                [
+                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
+                    Span::new(NonZeroRange::try_from(12..20).unwrap(), 0)
+                ],
+                [
+                    Span::new(NonZeroRange::try_from(8..14).unwrap(), 0),
+                    Span::new(NonZeroRange::try_from(18..22).unwrap(), 0)
+                ],
             )
         );
     }
@@ -197,11 +235,13 @@ mod tests {
     }
 
     fn test_both_ways(
-        a: impl Iterator<Item = Span<u16>> + Clone,
-        b: impl Iterator<Item = Span<u16>> + Clone,
+        a: impl IntoIterator<Item = Span<u16>, IntoIter: Clone>,
+        b: impl IntoIterator<Item = Span<u16>, IntoIter: Clone>,
     ) -> Vec<Span<u16>> {
+        let a = a.into_iter();
+        let b = b.into_iter();
         let first = Union::new(a.clone(), b.clone()).collect::<Vec<_>>();
-        let second = Union::new(a, b).collect::<Vec<_>>();
+        let second = Union::new(b, a).collect::<Vec<_>>();
 
         assert_eq!(first, second);
         first
