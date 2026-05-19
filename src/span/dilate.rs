@@ -13,7 +13,7 @@ use super::union_all::UnionAll;
 pub struct DilateSpanIter<I, T>
 where
     I: Iterator<Item = Span<T>>,
-    T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + CheckedAddSigned,
+    T: Ord + Copy + Debug + Add<Output = T> + CheckedAddSigned,
 {
     inner: UnionAll<ShiftedSpanIter<I, T>>,
     offset: T,
@@ -61,17 +61,26 @@ where
                 y_shift_unsigned: y_offset + y_delta,
             });
         }
-        let roi = Rect::new(
-            bounds.x.saturating_sub(x_offset.cast_unchecked()),
-            bounds.y.saturating_sub(y_offset.cast_unchecked()),
-            NonZeroU32::new(bounds.width.get() + x_offset.cast_unchecked()).unwrap(),
-            NonZeroU32::new(bounds.height.get() + y_offset.cast_unchecked()).unwrap(),
-        );
+        fn calculate_bound_dim(start: u32, len: NonZeroU32, offset: u32) -> (u32, NonZeroU32) {
+            if start >= offset {
+                (
+                    start - offset,
+                    NonZeroU32::new(len.get() + 2 * offset).unwrap(),
+                )
+            } else {
+                (
+                    0,
+                    NonZeroU32::new(len.get() + offset + offset - start).unwrap(),
+                )
+            }
+        }
+        let (x, width) = calculate_bound_dim(bounds.x, bounds.width, x_offset.cast_unchecked());
+        let (y, height) = calculate_bound_dim(bounds.y, bounds.height, y_offset.cast_unchecked());
 
         Some(Self {
-            inner: UnionAll::new(iters.with_roi(roi))?,
+            inner: UnionAll::new(iters.with_roi(Rect::new(x, y, width, height)))?,
             offset: y_offset,
-            bounds,
+            bounds: Rect::new(x, y, width, height),
         })
     }
 }

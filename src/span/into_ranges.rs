@@ -45,7 +45,7 @@ where
 impl<
     TIter: Iterator<Item = Span<T>> + ImageDimension,
     TOut: CreateRange<Item = T>,
-    T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + Eq + SignedNonZeroable,
+    T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + Eq + SignedNonZeroable + Debug + PartialOrd,
 > Iterator for SpanIntoRangesIter<TIter, TOut>
 {
     type Item = TOut;
@@ -59,6 +59,15 @@ impl<
             let start = offset + next.x.start - self.static_offset;
             let end = offset + next.x.end - self.static_offset;
             if let Some(unrel) = &mut self.unreleased {
+                debug_assert!(
+                    unrel.end() <= start,
+                    "Non-monotonic 1D range: prev_end={:?} > start={:?} (span y={:?}, x=[{:?},{:?}])",
+                    unrel.end(),
+                    start,
+                    next.y,
+                    next.x.start,
+                    next.x.end,
+                );
                 if unrel.end() == start {
                     *unrel = TOut::new_debug_checked_zeroable(unrel.start(), end);
                 } else {
