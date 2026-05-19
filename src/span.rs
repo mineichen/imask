@@ -3,7 +3,7 @@ use std::{
     ops::{Add, Div, Mul, Rem},
 };
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, UncheckedCast};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, UncheckedCast};
 
 mod clip;
 mod dilate;
@@ -43,7 +43,7 @@ impl<T: Debug + Ord + Copy> Span<T> {
     }
 }
 
-struct SortedRangesSpanIter<TParent>
+pub struct SortedRangesSpanIter<TParent>
 where
     TParent: Iterator<Item: CreateRange>,
 {
@@ -51,12 +51,37 @@ where
     pending: Option<NonZeroRange<<TParent::Item as CreateRange>::Item>>,
 }
 
+impl<TParent> Clone for SortedRangesSpanIter<TParent>
+where
+    TParent: Iterator<Item: CreateRange> + Clone,
+    <TParent::Item as CreateRange>::Item: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            parent: self.parent.clone(),
+            pending: self.pending.clone(),
+        }
+    }
+}
+
 impl<TParent: Iterator<Item: CreateRange>> SortedRangesSpanIter<TParent> {
-    fn new(parent: TParent) -> Self {
+    pub fn new(parent: TParent) -> Self {
         Self {
             parent,
             pending: None,
         }
+    }
+}
+
+impl<TParent: Iterator<Item: CreateRange> + ImageDimension> ImageDimension
+    for SortedRangesSpanIter<TParent>
+{
+    fn bounds(&self) -> Rect<u32> {
+        self.parent.bounds()
+    }
+
+    fn width(&self) -> std::num::NonZero<u32> {
+        self.parent.width()
     }
 }
 

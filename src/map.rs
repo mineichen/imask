@@ -8,7 +8,7 @@ use num_traits::Zero;
 
 use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesIter,
-    UncheckedCast,
+    SortedRangesSpanIter, UncheckedCast,
 };
 
 mod iter;
@@ -219,6 +219,36 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
             self.bounds.width,
             self.bounds.height,
         )
+    }
+
+    pub fn spans<T: CreateRange>(
+        &self,
+    ) -> SortedRangesSpanIter<
+        SortedRangesIter<
+            std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
+            std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
+            T,
+        >,
+    >
+    where
+        TIncluded: UncheckedCast<T::Item>,
+        TExcluded: UncheckedCast<T::Item>,
+        T::Item: Default + Copy + SignedNonZeroable + std::ops::Add<Output = T::Item>,
+    {
+        SortedRangesSpanIter::new(self.ranges())
+    }
+
+    pub fn spans_owned<T: CreateRange>(
+        self,
+    ) -> SortedRangesSpanIter<
+        SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>,
+    >
+    where
+        TIncluded: UncheckedCast<T::Item>,
+        TExcluded: UncheckedCast<T::Item>,
+        T::Item: Default + Copy + SignedNonZeroable + std::ops::Add<Output = T::Item>,
+    {
+        SortedRangesSpanIter::new(self.ranges_owned())
     }
 }
 

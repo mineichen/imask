@@ -3,28 +3,48 @@ use std::collections::BinaryHeap;
 use std::collections::binary_heap::PeekMut;
 use std::fmt::Debug;
 
-use crate::{CreateRange, NonZeroRange, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
 
 pub struct UnionAll<I: Iterator> {
     heap: BinaryHeap<PendingIter<I>>,
     accumulator: Option<I::Item>,
+    roi: Rect<u32>,
 }
 
 impl<I: Iterator<Item: Ord>> UnionAll<I> {
-    pub fn new(iters: impl IntoIterator<Item = I>) -> Self {
-        let mut heap = BinaryHeap::new();
-        for mut iter in iters {
-            if let Some(pending) = iter.next() {
-                heap.push(PendingIter {
-                    pending: Some(pending),
-                    iter,
-                });
-            }
+    pub fn new(iters: impl IntoIterator<Item = I> + ImageDimension) -> Option<Self> {
+        let roi = iters.bounds();
+        let mut iters = iters.into_iter().filter_map(|mut iter| {
+            let pending = iter.next()?;
+            Some(PendingIter {
+                pending: Some(pending),
+                iter,
+            })
+        });
+        let mut heap = BinaryHeap::with_capacity(iters.size_hint().0);
+        let first = iters.next()?;
+        // let mut roi = first.iter.bounds();
+        heap.push(first);
+        for pending in iters {
+            // roi = pending.iter.bounds().bounds(&roi);
+            heap.push(pending);
         }
-        Self {
+
+        Some(Self {
             heap,
             accumulator: None,
-        }
+            roi,
+        })
+    }
+}
+
+impl<I: Iterator> ImageDimension for UnionAll<I> {
+    fn bounds(&self) -> crate::Rect<u32> {
+        self.roi
+    }
+
+    fn width(&self) -> std::num::NonZero<u32> {
+        self.roi.width
     }
 }
 
@@ -104,50 +124,65 @@ impl<I: Iterator<Item: Ord>> Ord for PendingIter<I> {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use super::*;
     use crate::ImaskSet;
 
+    const BOUNDS: Rect<u32> = Rect::new(
+        0,
+        0,
+        NonZeroU32::new(100).unwrap(),
+        NonZeroU32::new(100).unwrap(),
+    );
+
     #[test]
     fn empty() {
-        let result: Vec<Span<u16>> =
-            UnionAll::new(std::iter::empty::<std::vec::IntoIter<Span<u16>>>()).collect();
-        assert!(result.is_empty());
+        let result =
+            UnionAll::new(std::iter::empty::<std::vec::IntoIter<Span<u16>>>().with_roi(BOUNDS));
+        assert!(result.is_none());
     }
 
     #[test]
     fn single_iterator() {
-        let iter: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
+        let iter: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
         assert_eq!(
             vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)],
-            UnionAll::new(std::iter::once(iter.into_iter())).collect::<Vec<_>>()
+            UnionAll::new(std::iter::once(iter.into_iter()).with_roi(BOUNDS))
+                .unwrap()
+                .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn two_non_overlapping() {
-        let a: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..5).unwrap(), 0))
-            .collect();
-        let b: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(10..15).unwrap(), 0))
-            .collect();
+        let a: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..5).unwrap(), 0)).collect();
+        let b: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(10..15).unwrap(), 0)).collect();
         assert_eq!(
             vec![
                 Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16),
                 Span::new(NonZeroRange::try_from(10..15).unwrap(), 0u16),
             ],
-            UnionAll::new([a.into_iter(), b.into_iter()]).collect::<Vec<_>>()
+            UnionAll::new([a.into_iter(), b.into_iter()].with_roi(BOUNDS))
+                .unwrap()
+                .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn two_overlapping() {
-        let a: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
-        let b: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(5..15).unwrap(), 0))
-            .collect();
+        let a: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
+        let b: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(5..15).unwrap(), 0)).collect();
         assert_eq!(
             vec![Span::new(NonZeroRange::try_from(0..15).unwrap(), 0u16)],
-            UnionAll::new([a.into_iter(), b.into_iter()]).collect::<Vec<_>>()
+            UnionAll::new([a.into_iter(), b.into_iter()].with_roi(BOUNDS))
+                .unwrap()
+                .collect::<Vec<_>>()
         );
     }
 
@@ -158,48 +193,54 @@ mod tests {
         let c: Vec<_> = vec![Span::new(NonZeroRange::try_from(6..12).unwrap(), 0)];
         assert_eq!(
             vec![Span::new(NonZeroRange::try_from(0..12).unwrap(), 0u16)],
-            UnionAll::new([a.into_iter(), b.into_iter(), c.into_iter()])
+            UnionAll::new([a.into_iter(), b.into_iter(), c.into_iter()].with_roi(BOUNDS))
+                .unwrap()
                 .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn same_spans() {
-        let a: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
-        let b: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
+        let a: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
+        let b: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
         assert_eq!(
             vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)],
-            UnionAll::new([a.into_iter(), b.into_iter()]).collect::<Vec<_>>()
+            UnionAll::new([a.into_iter(), b.into_iter()].with_roi(BOUNDS))
+                .unwrap()
+                .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn different_lines() {
-        let a: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
-        let b: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 1))
-            .collect();
+        let a: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
+        let b: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 1)).collect();
         assert_eq!(
             vec![
                 Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16),
                 Span::new(NonZeroRange::try_from(0..10).unwrap(), 1u16),
             ],
-            UnionAll::new([a.into_iter(), b.into_iter()]).collect::<Vec<_>>()
+            UnionAll::new([a.into_iter(), b.into_iter()].with_roi(BOUNDS))
+                .unwrap()
+                .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn some_empty_iterators() {
-        let a: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
-        let b: Vec::<Span<u16>> = vec![];
-        let c: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(5..15).unwrap(), 0))
-            .collect();
+        let a: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
+        let b: Vec<Span<u16>> = vec![];
+        let c: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(5..15).unwrap(), 0)).collect();
         assert_eq!(
             vec![Span::new(NonZeroRange::try_from(0..15).unwrap(), 0u16)],
-            UnionAll::new([a.into_iter(), b.into_iter(), c.into_iter()])
+            UnionAll::new([a.into_iter(), b.into_iter(), c.into_iter()].with_roi(BOUNDS))
+                .unwrap()
                 .collect::<Vec<_>>()
         );
     }
@@ -224,22 +265,24 @@ mod tests {
                 Span::new(NonZeroRange::try_from(0..8).unwrap(), 1u16),
                 Span::new(NonZeroRange::try_from(0..5).unwrap(), 2u16),
             ],
-            UnionAll::new([a.into_iter(), b.into_iter(), c.into_iter()])
+            UnionAll::new([a.into_iter(), b.into_iter(), c.into_iter()].with_roi(BOUNDS))
+                .unwrap()
                 .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn via_imaskset() {
-        let a: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0))
-            .collect();
-        let b: Vec<_> = std::iter::once(Span::new(NonZeroRange::try_from(5..15).unwrap(), 0))
-            .collect();
+        let a: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)).collect();
+        let b: Vec<_> =
+            std::iter::once(Span::new(NonZeroRange::try_from(5..15).unwrap(), 0)).collect();
         assert_eq!(
             vec![Span::new(NonZeroRange::try_from(0..15).unwrap(), 0u16)],
             vec![a.into_iter(), b.into_iter()]
-                .into_iter()
+                .with_roi(BOUNDS)
                 .union_all()
+                .unwrap()
                 .collect::<Vec<_>>()
         );
     }

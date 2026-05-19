@@ -1,9 +1,12 @@
-use std::fmt::Debug;
 use std::ops::Add;
+use std::{fmt::Debug, num::NonZeroU32};
 
 use num_traits::{One, SaturatingSub, Zero};
 
-use crate::{CheckedAddSigned, CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span};
+use crate::{
+    CheckedAddSigned, CreateRange, ImageDimension, ImaskSet, NonZeroRange, Rect, SignedNonZeroable,
+    Span, UncheckedCast,
+};
 
 use super::union_all::UnionAll;
 
@@ -13,6 +16,7 @@ where
     T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + CheckedAddSigned,
 {
     inner: UnionAll<ShiftedSpanIter<I, T>>,
+    offset: T,
     bounds: Rect<u32>,
 }
 
@@ -27,39 +31,48 @@ where
         + CheckedAddSigned
         + One
         + Zero
-        + SignedNonZeroable,
+        + SignedNonZeroable
+        + UncheckedCast<u32>,
 {
-    pub fn new(iter: I, offset: T::NonZero) -> Self {
+    pub fn new(iter: I, offset: T::NonZero) -> Option<Self> {
         let bounds = iter.bounds();
         let x_offset: T = offset.into();
+        let y_offset: T = offset.into();
         let mut iters: Vec<ShiftedSpanIter<I, T>> = Vec::new();
 
         for y_delta in T::one().iter_steps(offset) {
             iters.push(ShiftedSpanIter {
                 parent: iter.clone(),
                 x_offset,
-                y_shift: -T::into_signed(y_delta),
+                y_shift_unsigned: y_offset.saturating_sub(&y_delta),
             });
         }
 
         iters.push(ShiftedSpanIter {
             parent: iter.clone(),
             x_offset,
-            y_shift: T::into_signed(T::zero()),
+            y_shift_unsigned: y_offset,
         });
 
         for y_delta in T::one().iter_steps(offset) {
             iters.push(ShiftedSpanIter {
                 parent: iter.clone(),
                 x_offset,
-                y_shift: T::into_signed(y_delta),
+                y_shift_unsigned: y_offset + y_delta,
             });
         }
+        let roi = Rect::new(
+            bounds.x.saturating_sub(x_offset.cast_unchecked()),
+            bounds.y.saturating_sub(y_offset.cast_unchecked()),
+            NonZeroU32::new(bounds.width.get() + x_offset.cast_unchecked()).unwrap(),
+            NonZeroU32::new(bounds.height.get() + y_offset.cast_unchecked()).unwrap(),
+        );
 
-        Self {
-            inner: UnionAll::new(iters),
+        Some(Self {
+            inner: UnionAll::new(iters.with_roi(roi))?,
+            offset: y_offset,
             bounds,
-        }
+        })
     }
 }
 
@@ -71,7 +84,20 @@ where
     type Item = Span<T>;
 
     fn next(&mut self) -> Option<Span<T>> {
-        self.inner.next()
+        loop {
+            let span = self.inner.next()?;
+            let y = match span.y.checked_add_signed(-T::into_signed(self.offset)) {
+                Some(y) => y,
+                None => continue,
+            };
+            return Some(Span {
+                x: NonZeroRange::new_debug_checked_zeroable(
+                    span.x.start.saturating_sub(&self.offset),
+                    span.x.end.saturating_sub(&self.offset),
+                ),
+                y,
+            });
+        }
     }
 }
 
@@ -92,35 +118,29 @@ where
 struct ShiftedSpanIter<I, T>
 where
     I: Iterator<Item = Span<T>>,
-    T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + CheckedAddSigned,
+    T: Ord + Copy + Debug + Add<Output = T>,
 {
     parent: I,
     x_offset: T,
-    y_shift: T::Signed,
+    y_shift_unsigned: T,
 }
 
 impl<I, T> Iterator for ShiftedSpanIter<I, T>
 where
     I: Iterator<Item = Span<T>>,
-    T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + CheckedAddSigned,
+    T: Ord + Copy + Debug + Add<Output = T>,
 {
     type Item = Span<T>;
 
     fn next(&mut self) -> Option<Span<T>> {
-        loop {
-            let span = self.parent.next()?;
-            let y = match span.y.checked_add_signed(self.y_shift) {
-                Some(y) => y,
-                None => continue,
-            };
-            return Some(Span {
-                x: NonZeroRange::new_debug_checked_zeroable(
-                    span.x.start.saturating_sub(&self.x_offset),
-                    span.x.end + self.x_offset,
-                ),
-                y,
-            });
-        }
+        let span = self.parent.next()?;
+        Some(Span {
+            x: NonZeroRange::new_debug_checked_zeroable(
+                span.x.start,
+                span.x.end + self.x_offset + self.x_offset,
+            ),
+            y: span.y + self.y_shift_unsigned,
+        })
     }
 }
 
@@ -139,6 +159,7 @@ mod tests {
         let result: Vec<_> = rect
             .into_spans()
             .dilate(NonZero::new(2u32).unwrap())
+            .unwrap()
             .collect();
 
         let expected: Vec<_> = (3..9).map(|y| Span::new(48..54, y)).collect();
@@ -151,6 +172,7 @@ mod tests {
             .into_iter()
             .with_bounds(W, H)
             .dilate(NonZero::new(1u32).unwrap())
+            .unwrap()
             .collect();
 
         assert_eq!(
@@ -169,6 +191,7 @@ mod tests {
             .into_iter()
             .with_bounds(W, H)
             .dilate(NonZero::new(1u32).unwrap())
+            .unwrap()
             .collect();
 
         assert_eq!(
@@ -183,6 +206,7 @@ mod tests {
             .into_iter()
             .with_bounds(W, H)
             .dilate(NonZero::new(1u32).unwrap())
+            .unwrap()
             .collect();
 
         assert_eq!(
@@ -204,6 +228,7 @@ mod tests {
             .into_iter()
             .with_bounds(W, H)
             .dilate(NonZero::new(1u32).unwrap())
+            .unwrap()
             .collect();
 
         assert_eq!(
@@ -223,6 +248,7 @@ mod tests {
             .into_iter()
             .with_bounds(W, H)
             .dilate(NonZero::new(3u32).unwrap())
+            .unwrap()
             .collect();
 
         assert_eq!(

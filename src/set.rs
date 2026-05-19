@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span,
+    CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
     UncheckedCast, WithBounds, WithRoi,
 };
 #[cfg(feature = "range-set-blaze-0_5")]
@@ -73,8 +73,9 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::Subtract::new(self.into_iter(), other.into_iter())
     }
 
-    fn union_all<T>(self) -> crate::span::UnionAll<Self::Item>
+    fn union_all<T>(self) -> Option<crate::span::UnionAll<Self::Item>>
     where
+        Self: ImageDimension,
         T: Ord + Copy + std::fmt::Debug,
         Self::Item: Iterator<Item = Span<T>>,
     {
@@ -124,7 +125,7 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn dilate<T>(
         self,
         offset: <T as SignedNonZeroable>::NonZero,
-    ) -> crate::span::DilateSpanIter<Self::IntoIter, T>
+    ) -> Option<crate::span::DilateSpanIter<Self::IntoIter, T>>
     where
         T: Ord
             + Copy
@@ -134,7 +135,8 @@ pub trait ImaskSet: IntoIterator + Sized {
             + crate::CheckedAddSigned
             + One
             + Zero
-            + SignedNonZeroable,
+            + SignedNonZeroable
+            + UncheckedCast<u32>,
         Self::IntoIter: Iterator<Item = Span<T>> + Clone + ImageDimension,
     {
         crate::span::DilateSpanIter::new(self.into_iter(), offset)
@@ -412,6 +414,36 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.bounds.height,
         )
     }
+    pub fn spans<T: CreateRange>(
+        &self,
+    ) -> SortedRangesSpanIter<
+        SortedRangesIter<
+            std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
+            std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
+            T,
+        >,
+    >
+    where
+        TIncluded: UncheckedCast<T::Item>,
+        TExcluded: UncheckedCast<T::Item>,
+        T::Item: Default + Copy + SignedNonZeroable + Add<Output = T::Item>,
+    {
+        SortedRangesSpanIter::new(self.iter_roi())
+    }
+
+    pub fn spans_owned<T: CreateRange>(
+        self,
+    ) -> SortedRangesSpanIter<
+        SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>,
+    >
+    where
+        TIncluded: UncheckedCast<T::Item>,
+        TExcluded: UncheckedCast<T::Item>,
+        T::Item: Default + Copy + SignedNonZeroable + Add<Output = T::Item>,
+    {
+        SortedRangesSpanIter::new(self.iter_roi_owned())
+    }
+
     pub fn iter_global_with<T: CreateRange>(
         &self,
         width: NonZeroU32,
