@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    ops::{Add, Div, Mul, Rem},
+    ops::{Add, Div, Mul, Rem, Sub},
 };
 
 use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, UncheckedCast};
@@ -93,6 +93,7 @@ where
                           + Div<Output = <TParent::Item as CreateRange>::Item>
                           + Mul<Output = <TParent::Item as CreateRange>::Item>
                           + Add<Output = <TParent::Item as CreateRange>::Item>
+                          + Sub<Output = <TParent::Item as CreateRange>::Item>
                           + Rem<Output = <TParent::Item as CreateRange>::Item>
                           + Ord
                           + Debug,
@@ -113,12 +114,13 @@ where
         let end = range.end();
         let width = self.parent.width().get().cast_unchecked();
         let y = start / width;
-        let cut = y * width + width;
+        let row_start = y * width;
+        let cut = row_start + width;
         let x = if let Ok(rest) = NonZeroRange::try_from(cut..end) {
             self.pending = Some(rest);
-            NonZeroRange::new_debug_checked_zeroable(start, cut)
+            NonZeroRange::new_debug_checked_zeroable(start - row_start, width)
         } else {
-            NonZeroRange::new_debug_checked_zeroable(start, end)
+            NonZeroRange::new_debug_checked_zeroable(start - row_start, end - row_start)
         };
         Some(Span { x, y })
     }
@@ -149,7 +151,7 @@ mod tests {
         let iter = [0u32..10, 11..20].with_bounds(NONZERO_10, NONZERO_10);
         let span = SortedRangesSpanIter::new(iter);
         assert_eq!(
-            vec!(Span::new(0..10, 0), Span::new(11..20, 1)),
+            vec!(Span::new(0..10, 0), Span::new(1..10, 1)),
             span.collect::<Vec<_>>()
         );
     }
@@ -158,7 +160,7 @@ mod tests {
         let iter = [0u32..20].with_bounds(NONZERO_10, NONZERO_10);
         let span = SortedRangesSpanIter::new(iter);
         assert_eq!(
-            vec!(Span::new(0..10, 0), Span::new(10..20, 1)),
+            vec!(Span::new(0..10, 0), Span::new(0..10, 1)),
             span.collect::<Vec<_>>()
         );
     }
