@@ -414,34 +414,40 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.bounds.height,
         )
     }
-    pub fn spans<T: CreateRange>(
+    pub fn spans<T>(
         &self,
     ) -> SortedRangesSpanIter<
         SortedRangesIter<
             std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
             std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-            T,
+            NonZeroRange<T>,
         >,
     >
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default + Copy + SignedNonZeroable + Add<Output = T::Item>,
+        NonZeroRange<T>: CreateRange<Item = T>,
+        TIncluded: UncheckedCast<T>,
+        TExcluded: UncheckedCast<T>,
+        T: Default + Copy + SignedNonZeroable + Add<Output = T>,
     {
-        SortedRangesSpanIter::new(self.iter_roi())
+        SortedRangesSpanIter::new(self.iter_roi::<NonZeroRange<T>>())
     }
 
-    pub fn spans_owned<T: CreateRange>(
+    pub fn spans_owned<T>(
         self,
     ) -> SortedRangesSpanIter<
-        SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>,
+        SortedRangesIter<
+            std::vec::IntoIter<TIncluded>,
+            std::vec::IntoIter<TExcluded>,
+            NonZeroRange<T>,
+        >,
     >
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default + Copy + SignedNonZeroable + Add<Output = T::Item>,
+        NonZeroRange<T>: CreateRange<Item = T>,
+        TIncluded: UncheckedCast<T>,
+        TExcluded: UncheckedCast<T>,
+        T: Default + Copy + SignedNonZeroable + Add<Output = T>,
     {
-        SortedRangesSpanIter::new(self.iter_roi_owned())
+        SortedRangesSpanIter::new(self.iter_roi_owned::<NonZeroRange<T>>())
     }
 
     pub fn iter_global_with<T: CreateRange>(
@@ -515,6 +521,8 @@ impl<TIncluded, TExcluded> ImageDimension for SortedRanges<TIncluded, TExcluded>
 mod tests {
     use std::ops::{Range, RangeInclusive};
 
+    use testresult::TestResult;
+
     use crate::{NonZeroRange, Rect};
 
     use super::*;
@@ -525,6 +533,28 @@ mod tests {
         NonZero::new(1000u32).unwrap(),
         NonZero::new(1000u32).unwrap(),
     );
+
+    #[test]
+    fn get_spans() -> TestResult {
+        let input = SortedRanges::<u32, u32>::try_from_ordered_iter(
+            [0..1000u32, 1001..2000].with_roi(TEST_BOUNDS),
+        )?;
+        let spans = input.spans_owned::<u32>().collect::<Vec<_>>();
+        assert_eq!(
+            vec!(
+                Span {
+                    y: 0,
+                    x: (0..1000).try_into()?
+                },
+                Span {
+                    y: 1,
+                    x: (1..1000).try_into()?
+                },
+            ),
+            spans
+        );
+        Ok(())
+    }
 
     #[cfg(feature = "range-set-blaze-0_5")]
     #[test]

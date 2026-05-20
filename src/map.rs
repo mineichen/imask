@@ -221,34 +221,36 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
         )
     }
 
-    pub fn spans<T: CreateRange>(
+    pub fn spans<T>(
         &self,
     ) -> SortedRangesSpanIter<
         SortedRangesIter<
             std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
             std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-            T,
+            NonZeroRange<T>,
         >,
     >
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default + Copy + SignedNonZeroable + std::ops::Add<Output = T::Item>,
+        NonZeroRange<T>: CreateRange<Item = T>,
+        TIncluded: UncheckedCast<T>,
+        TExcluded: UncheckedCast<T>,
+        T: Default + Copy + SignedNonZeroable + std::ops::Add<Output = T>,
     {
-        SortedRangesSpanIter::new(self.ranges())
+        SortedRangesSpanIter::new(self.ranges::<NonZeroRange<T>>())
     }
 
-    pub fn spans_owned<T: CreateRange>(
+    pub fn spans_owned<T>(
         self,
     ) -> SortedRangesSpanIter<
-        SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>,
+        SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, NonZeroRange<T>>,
     >
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default + Copy + SignedNonZeroable + std::ops::Add<Output = T::Item>,
+        NonZeroRange<T>: CreateRange<Item = T>,
+        TIncluded: UncheckedCast<T>,
+        TExcluded: UncheckedCast<T>,
+        T: Default + Copy + SignedNonZeroable + std::ops::Add<Output = T>,
     {
-        SortedRangesSpanIter::new(self.ranges_owned())
+        SortedRangesSpanIter::new(self.ranges_owned::<NonZeroRange<T>>())
     }
 }
 

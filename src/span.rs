@@ -75,13 +75,34 @@ impl<TParent: Iterator<Item: CreateRange>> SortedRangesSpanIter<TParent> {
 
 impl<TParent: Iterator<Item: CreateRange> + ImageDimension> ImageDimension
     for SortedRangesSpanIter<TParent>
+where
+    u32: TryInto<<TParent::Item as CreateRange>::Item, Error: Debug>,
 {
     fn bounds(&self) -> Rect<u32> {
-        self.parent.bounds()
+        let bounds = self.parent.bounds();
+        #[cfg(debug_assertions)]
+        if let Err(e) = (bounds.width.get() * bounds.height.get()).try_into() {
+            panic!(
+                "{}*{} overflows {}: {e:?}",
+                bounds.width,
+                bounds.height,
+                std::any::type_name::<<TParent::Item as CreateRange>::Item>()
+            );
+        }
+        bounds
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.parent.width()
+        let width = self.parent.width();
+        #[cfg(debug_assertions)]
+        if let Err(e) = (width.get() * width.get()).try_into() {
+            panic!(
+                "{width}^2 overflows {}: {e:?}",
+                std::any::type_name::<<TParent::Item as CreateRange>::Item>()
+            )
+        };
+
+        width
     }
 }
 
