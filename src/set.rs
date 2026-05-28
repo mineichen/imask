@@ -19,7 +19,6 @@ fn invalid_data<T: Display>(e: T) -> std::io::Error {
 
 mod bounds_inspector;
 // mod chunk_by_row;
-mod affine_transform;
 mod clip_2d;
 #[cfg(feature = "range-set-blaze-0_5")]
 mod dilate;
@@ -33,9 +32,7 @@ mod rect;
 mod sanitize_sorted_disjoint;
 // mod split_rows;
 
-pub use affine_transform::*;
 pub use bounds_inspector::*;
-// pub use chunk_by_row::*;
 pub use clip_2d::*;
 #[cfg(feature = "range-set-blaze-0_5")]
 pub use dilate::*;

@@ -5,6 +5,7 @@ use std::{
 
 use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, UncheckedCast};
 
+mod affine_transform;
 mod clip;
 mod dilate;
 mod into_ranges;
@@ -14,6 +15,7 @@ mod subtract;
 mod union;
 mod union_all;
 
+pub use affine_transform::*;
 pub use clip::*;
 pub use dilate::*;
 pub use into_ranges::*;
