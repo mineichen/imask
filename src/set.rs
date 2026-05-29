@@ -70,6 +70,13 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::Subtract::new(self.into_iter(), other.into_iter())
     }
 
+    fn intersect<TOther: IntoIterator<Item = Span<T>>, T>(
+        self,
+        other: TOther,
+    ) -> crate::span::Intersect<Self::IntoIter, TOther::IntoIter> {
+        crate::span::Intersect::new(self.into_iter(), other.into_iter())
+    }
+
     fn union_all<T>(self) -> Option<crate::span::UnionAll<Self::Item>>
     where
         Self: ImageDimension,
