@@ -38,8 +38,10 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
         Rect {
             x,
             y,
-            width: std::num::NonZero::new(x_end.max(x) - x).unwrap_or(a.width),
-            height: std::num::NonZero::new(y_end.max(y) - y).unwrap_or(a.height),
+            width: std::num::NonZero::new(x_end.saturating_sub(x))
+                .unwrap_or_else(|| std::num::NonZero::new(1).unwrap()),
+            height: std::num::NonZero::new(y_end.saturating_sub(y))
+                .unwrap_or_else(|| std::num::NonZero::new(1).unwrap()),
         }
     }
 
@@ -129,20 +131,18 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
                 continue;
             }
 
-            let start = next_a.x.start.max(next_b.x.start);
-            let end = next_a.x.end.min(next_b.x.end);
+            let result_x = next_a.x.intersection(&next_b.x).unwrap();
 
             match next_a.x.end.cmp(&next_b.x.end) {
                 Ordering::Less => {
                     self.a.next();
-                    let remainder = Span {
+                    self.b.pending = Some(Span {
                         x: NonZeroRange::new_debug_checked_zeroable(next_a.x.end, next_b.x.end),
                         y: next_b.y,
-                    };
-                    self.b.pending = Some(remainder);
+                    });
                     #[cfg(debug_assertions)]
                     {
-                        self.last_b = Some(remainder);
+                        self.last_b = self.b.pending;
                     }
                 }
                 Ordering::Equal => {
@@ -151,20 +151,19 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
                 }
                 Ordering::Greater => {
                     self.b.next();
-                    let remainder = Span {
+                    self.a.pending = Some(Span {
                         x: NonZeroRange::new_debug_checked_zeroable(next_b.x.end, next_a.x.end),
                         y: next_a.y,
-                    };
-                    self.a.pending = Some(remainder);
+                    });
                     #[cfg(debug_assertions)]
                     {
-                        self.last_a = Some(remainder);
+                        self.last_a = self.a.pending;
                     }
                 }
             }
 
             return Some(Span {
-                x: NonZeroRange::new_debug_checked_zeroable(start, end),
+                x: result_x,
                 y: next_a.y,
             });
         }
