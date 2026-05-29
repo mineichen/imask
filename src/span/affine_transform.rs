@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::collections::binary_heap::PeekMut;
 use std::marker::PhantomData;
 use std::num::NonZero;
 
@@ -174,17 +173,27 @@ impl QuadSpanIter {
             x_right: i32::MIN,
         };
 
-        if iter.row_y <= iter.row_y_end {
-            iter.compute_span_from_steppers();
-            while iter.x_left > iter.x_right && iter.row_y <= iter.row_y_end {
-                iter.advance_row();
-            }
-        }
-
+        iter.skip_to_valid();
         iter
     }
 
-    fn compute_span_from_steppers(&mut self) {
+    fn exhausted(&self) -> bool {
+        self.row_y > self.row_y_end
+    }
+
+    fn current(&self) -> Span<u32> {
+        debug_assert!(!self.exhausted());
+        let cs = self.x_left.max(0) as u32;
+        let ce = self.x_right as u32 + 1;
+        debug_assert!(cs < ce);
+        Span {
+            y: self.row_y as u32,
+            x: NonZeroRange::new_debug_checked_zeroable(cs, ce),
+        }
+    }
+
+    #[inline]
+    fn compute_x_bounds(&self) -> (i32, i32) {
         let mut x_left = i32::MAX;
         let mut x_right = i32::MIN;
         for i in 0..4 {
@@ -193,10 +202,10 @@ impl QuadSpanIter {
                 x_right = x_right.max(fp_floor(self.x_fp[i]));
             }
         }
-        self.x_left = x_left;
-        self.x_right = x_right;
+        (x_left, x_right)
     }
 
+    #[inline]
     fn advance_edge(&mut self, i: usize) {
         self.y[i] += 1;
         let s = self.step[i];
@@ -208,6 +217,7 @@ impl QuadSpanIter {
         self.accum[i] = a as i32;
     }
 
+    #[inline]
     fn advance_row(&mut self) {
         self.row_y += 1;
         if self.row_y > self.row_y_end {
@@ -218,47 +228,34 @@ impl QuadSpanIter {
                 self.advance_edge(i);
             }
         }
-        self.compute_span_from_steppers();
     }
 
-    fn next_span(&mut self) -> Option<Span<u32>> {
-        loop {
-            if self.row_y > self.row_y_end {
-                return None;
+    fn skip_to_valid(&mut self) {
+        while self.row_y <= self.row_y_end {
+            let (xl, xr) = self.compute_x_bounds();
+            if xl <= xr && self.row_y >= 0 && xr >= 0 {
+                self.x_left = xl;
+                self.x_right = xr;
+                return;
             }
-
-            let y = self.row_y;
-            let x_start = self.x_left;
-            let x_right = self.x_right;
-
             self.advance_row();
-            while self.x_left > self.x_right && self.row_y <= self.row_y_end {
-                self.advance_row();
-            }
-
-            if y < 0 || x_right < 0 {
-                continue;
-            }
-
-            let cs = x_start.max(0) as u32;
-            let ce = x_right as u32 + 1;
-            debug_assert!(cs < ce);
-            return Some(Span {
-                y: y as u32,
-                x: NonZeroRange::new_debug_checked_zeroable(cs, ce),
-            });
         }
+    }
+
+    fn advance(&mut self) -> bool {
+        self.advance_row();
+        self.skip_to_valid();
+        !self.exhausted()
     }
 }
 
 struct HeapEntry {
-    current: Span<u32>,
     iter: QuadSpanIter,
 }
 
 impl PartialEq for HeapEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.current.y == other.current.y && self.current.x.start == other.current.x.start
+        self.iter.row_y == other.iter.row_y && self.iter.x_left == other.iter.x_left
     }
 }
 
@@ -272,8 +269,8 @@ impl PartialOrd for HeapEntry {
 
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        match other.current.y.cmp(&self.current.y) {
-            Ordering::Equal => other.current.x.start.cmp(&self.current.x.start),
+        match other.iter.row_y.cmp(&self.iter.row_y) {
+            Ordering::Equal => other.iter.x_left.cmp(&self.iter.x_left),
             ord => ord,
         }
     }
@@ -298,9 +295,9 @@ impl<I: Iterator<Item = Span<u32>> + ImageDimension> AffineTransformHeap<I> {
             let seg_width = (span.x.end - span.x.start) as u64;
 
             let corners = quad_corners(matrix, col, row, seg_width);
-            let mut iter = QuadSpanIter::new(&corners);
-            if let Some(s) = iter.next_span() {
-                entries.push(HeapEntry { current: s, iter });
+            let iter = QuadSpanIter::new(&corners);
+            if !iter.exhausted() {
+                entries.push(HeapEntry { iter });
             }
         }
 
@@ -313,19 +310,15 @@ impl<I: Iterator<Item = Span<u32>> + ImageDimension> AffineTransformHeap<I> {
     }
 
     fn pop_span(&mut self) -> Option<Span<u32>> {
-        let mut entry = self.heap.peek_mut()?;
-        let result = entry.current;
+        let mut entry = self.heap.pop()?;
+        let result = entry.iter.current();
 
-        if let Some(next) = entry.iter.next_span() {
-            entry.current = next;
-        } else {
-            PeekMut::pop(entry);
+        if entry.iter.advance() {
+            self.heap.push(entry);
         }
 
-        let right = self.bounds.x + self.bounds.width.get();
-        let bottom = self.bounds.y + self.bounds.height.get();
-        debug_assert!(result.x.end <= right);
-        debug_assert!(result.y < bottom);
+        debug_assert!(result.x.end <= self.bounds.x + self.bounds.width.get());
+        debug_assert!(result.y < self.bounds.y + self.bounds.height.get());
 
         Some(result)
     }
