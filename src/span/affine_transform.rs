@@ -45,12 +45,7 @@ fn transform_bounds_rect(parent: Rect<u32>, matrix: &Matrix3<f64>) -> Option<Rec
     Some(Rect::new(bx, by, width, height))
 }
 
-fn quad_corners(
-    matrix: &Matrix3<f64>,
-    col: u64,
-    row: u64,
-    w: u64,
-) -> [(f64, f64); 4] {
+fn quad_corners(matrix: &Matrix3<f64>, col: u64, row: u64, w: u64) -> [(f64, f64); 4] {
     let left = col as f64 - 0.5;
     let right = col as f64 + w as f64 - 0.5;
     let top = row as f64 - 0.5;
@@ -382,7 +377,13 @@ mod tests {
         eprintln!("\n{}:", label);
         for y in 0..h {
             let row: String = (0..w)
-                .map(|x| if bitmap[(y * w + x) as usize] { '#' } else { '.' })
+                .map(|x| {
+                    if bitmap[(y * w + x) as usize] {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })
                 .collect();
             eprintln!("  {}", row);
         }
@@ -402,9 +403,7 @@ mod tests {
 
         let cx = 3.0_f64;
         let cy = 3.0_f64;
-        let matrix = Matrix3::new(
-            0.0, 1.0, cx - cy, -1.0, 0.0, cx + cy, 0.0, 0.0, 1.0,
-        );
+        let matrix = Matrix3::new(0.0, 1.0, cx - cy, -1.0, 0.0, cx + cy, 0.0, 0.0, 1.0);
 
         let roi = Rect::new(0, 0, nz(6), nz(5));
         let wrapped = crate::WithRoi::new(l_spans.into_iter(), roi);
@@ -546,8 +545,7 @@ mod tests {
                 }
             }
         }
-        let output_dir =
-            std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".into());
+        let output_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".into());
         let path = format!("{}/{}", output_dir, filename);
         let _ = img.save(&path);
     }
@@ -568,7 +566,10 @@ mod tests {
             canvas_side,
             canvas_side,
             &result,
-            &format!("rotate_{}x{}_{}deg.png", rect_side, rect_side, angle_deg as u32),
+            &format!(
+                "rotate_{}x{}_{}deg.png",
+                rect_side, rect_side, angle_deg as u32
+            ),
         );
 
         for window in result.windows(2) {
@@ -616,12 +617,7 @@ mod tests {
         );
     }
 
-    fn scale_and_rotation_matrix(
-        cx: f64,
-        cy: f64,
-        scale: f64,
-        angle_deg: f64,
-    ) -> Matrix3<f64> {
+    fn scale_and_rotation_matrix(cx: f64, cy: f64, scale: f64, angle_deg: f64) -> Matrix3<f64> {
         let s = Matrix3::new(
             scale,
             0.0,
@@ -650,12 +646,7 @@ mod tests {
         r * s
     }
 
-    fn assert_scaled_rotated_no_gaps(
-        rect_side: u32,
-        scale: f64,
-        angle_deg: f64,
-        canvas_side: u32,
-    ) {
+    fn assert_scaled_rotated_no_gaps(rect_side: u32, scale: f64, angle_deg: f64, canvas_side: u32) {
         let offset = (canvas_side - rect_side) / 2;
         let rect = crate::Rect::new(offset, offset, nz(rect_side), nz(rect_side));
         let spans = rect.into_spans();
@@ -669,10 +660,7 @@ mod tests {
 
         let tag = format!(
             "scale{}_rotate_{}x{}_{}deg",
-            scale as u32,
-            rect_side,
-            rect_side,
-            angle_deg as u32
+            scale as u32, rect_side, rect_side, angle_deg as u32
         );
         save_debug_image(canvas_side, canvas_side, &result, &format!("{tag}.png"));
         print_bitmap(canvas_side, canvas_side, &result, &tag);
@@ -798,8 +786,7 @@ mod tests {
         let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -2.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
-        let result: Vec<Span<u32>> =
-            AffineTransformHeap::new(spans, &matrix).unwrap().collect();
+        let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
         assert_eq!(
             result,
             vec![Span::new(0..2, 1), Span::new(0..2, 2), Span::new(0..2, 3)]
@@ -811,8 +798,7 @@ mod tests {
         let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, 4.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
-        let result: Vec<Span<u32>> =
-            AffineTransformHeap::new(spans, &matrix).unwrap().collect();
+        let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
         assert_eq!(
             result,
             vec![Span::new(5..8, 1), Span::new(5..8, 2), Span::new(5..8, 3)]
@@ -824,8 +810,7 @@ mod tests {
         let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, -2.0, 0.0, 0.0, 1.0);
-        let result: Vec<Span<u32>> =
-            AffineTransformHeap::new(spans, &matrix).unwrap().collect();
+        let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
         assert_eq!(result, vec![Span::new(1..4, 0), Span::new(1..4, 1)]);
     }
 
@@ -834,8 +819,7 @@ mod tests {
         let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 1.0);
-        let result: Vec<Span<u32>> =
-            AffineTransformHeap::new(spans, &matrix).unwrap().collect();
+        let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
         assert_eq!(
             result,
             vec![Span::new(1..4, 5), Span::new(1..4, 6), Span::new(1..4, 7)]
@@ -847,8 +831,7 @@ mod tests {
         let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -2.0, 0.0, 1.0, -2.0, 0.0, 0.0, 1.0);
-        let result: Vec<Span<u32>> =
-            AffineTransformHeap::new(spans, &matrix).unwrap().collect();
+        let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
         assert_eq!(result, vec![Span::new(0..2, 0), Span::new(0..2, 1)]);
     }
 

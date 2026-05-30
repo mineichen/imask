@@ -38,8 +38,7 @@ pub struct SanitizeSortedDisjoint<I: Iterator<Item: CreateRange<Item: Debug>>> {
     state: SanitizeSortedDisjointState<I::Item>,
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 enum SanitizeSortedDisjointState<TRange: CreateRange> {
     Pending(TRange),
     Error(SanitizeSortedDisjointError<TRange::Item>),

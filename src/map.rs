@@ -242,7 +242,11 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
     pub fn spans_owned<T>(
         self,
     ) -> SortedRangesSpanIter<
-        SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, NonZeroRange<T>>,
+        SortedRangesIter<
+            std::vec::IntoIter<TIncluded>,
+            std::vec::IntoIter<TExcluded>,
+            NonZeroRange<T>,
+        >,
     >
     where
         NonZeroRange<T>: CreateRange<Item = T>,

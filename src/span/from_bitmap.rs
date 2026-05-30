@@ -30,9 +30,7 @@ impl<I: Iterator, TOut> BitmapToSpanIter<I, TOut> {
     }
 }
 
-impl<'a, TOut>
-    BitmapToSpanIter<std::iter::Map<std::slice::Iter<'a, u8>, fn(&u8) -> bool>, TOut>
-{
+impl<'a, TOut> BitmapToSpanIter<std::iter::Map<std::slice::Iter<'a, u8>, fn(&u8) -> bool>, TOut> {
     pub fn from_byte_slice(bytes: &'a [u8], width: NonZero<u32>) -> Self {
         debug_assert_eq!(bytes.len() % width.get() as usize, 0);
         Self::from_bool_iter(bytes.iter().map(byte_is_nonzero as fn(&u8) -> bool), width)

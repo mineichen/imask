@@ -45,7 +45,14 @@ where
 impl<
     TIter: Iterator<Item = Span<T>> + ImageDimension,
     TOut: CreateRange<Item = T>,
-    T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + Eq + SignedNonZeroable + Debug + PartialOrd,
+    T: Copy
+        + Mul<Output = T>
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Eq
+        + SignedNonZeroable
+        + Debug
+        + PartialOrd,
 > Iterator for SpanIntoRangesIter<TIter, TOut>
 {
     type Item = TOut;
