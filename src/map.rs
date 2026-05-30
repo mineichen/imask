@@ -343,7 +343,7 @@ mod tests {
     #[cfg(feature = "range-set-blaze-0_5")]
     mod blaze {
         use super::*;
-        use range_set_blaze_0_5::{SortedDisjointMap, ValueRef};
+        use range_set_blaze_0_5::ValueRef;
         #[derive(PartialEq, Eq, Clone, Debug)]
         struct TestMetaItem(&'static str);
 
@@ -390,8 +390,6 @@ mod tests {
         }
         #[test]
         fn combine_inline() {
-            use range_set_blaze_0_5::SortedDisjointMap;
-
             let a = SortedRangesMap::<u8, u8, Vec<TestMetaItem>>::try_from_ordered_iter(
                 [(10u32..30, "a_first".into()), (42..50, "a_second".into())]
                     .with_roi(test_bounds()),

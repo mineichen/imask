@@ -13,7 +13,7 @@ edition = "2024"
 
 [dependencies]
 itertools = "0.14.0"
-nalgebra = "0.34"
+nalgebra = "0.35"
 range-set-blaze-0_5 = { package = "range-set-blaze", version = "0.5", default-features = false, optional = true }
 thiserror = "2.0.12"
 rkyv = { version = "0.8.15", optional = true }
@@ -27,7 +27,7 @@ tokio = { version = "1", features = ["macros", "rt", "io-util"] }
 futures-util = "0.3"
 testresult = "0.4"
 image = "0.25"
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "span_iter"

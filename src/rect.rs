@@ -3,7 +3,7 @@ use std::{
     ops::{Add, Sub},
 };
 
-use crate::{CreateRange, NonZeroRange, RectIterator, SignedNonZeroable, UncheckedCast};
+use crate::{CreateRange, NonZeroRange, RectIterator, SignedNonZeroable};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive))]
