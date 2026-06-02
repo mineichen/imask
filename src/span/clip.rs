@@ -1,26 +1,69 @@
 use std::fmt::Debug;
-use std::ops::Add;
+use std::num::NonZeroU32;
+use std::ops::{Add, Sub};
 
 use crate::{ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span};
 
 pub struct ClipSpanIter<TIter, T: SignedNonZeroable> {
     parent: TIter,
-    bounds: Rect<T>,
+    clip: Rect<T>,
+    output_bounds: Rect<u32>,
+    pending: Option<Span<T>>,
 }
 
-impl<TIter, T: SignedNonZeroable> ClipSpanIter<TIter, T> {
-    pub fn new(parent: TIter, bounds: Rect<T>) -> Self {
-        Self { parent, bounds }
+impl<TIter, T> ClipSpanIter<TIter, T>
+where
+    TIter: Iterator<Item = Span<T>> + ImageDimension,
+    T: SignedNonZeroable
+        + TryFrom<u32, Error: Debug>
+        + Ord
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Copy
+        + Debug,
+{
+    pub fn new(mut parent: TIter, roi: Rect<u32>) -> Self {
+        let pb = parent.bounds();
+
+        let x_start = pb.x.max(roi.x);
+        let y_start = pb.y.max(roi.y);
+        let x_end = (pb.x + pb.width.get()).min(roi.x + roi.width.get());
+        let y_end = (pb.y + pb.height.get()).min(roi.y + roi.height.get());
+
+        let output_bounds = Rect::new(
+            x_start,
+            y_start,
+            NonZeroU32::new(x_end - x_start).expect("Empty x intersection"),
+            NonZeroU32::new(y_end - y_start).expect("Empty y intersection"),
+        );
+
+        let clip = Rect::new(
+            T::try_from(x_start).expect("x_start overflow"),
+            T::try_from(y_start).expect("y_start overflow"),
+            T::create_non_zero(T::try_from(x_end - x_start).expect("width overflow"))
+                .expect("width must be non-zero"),
+            T::create_non_zero(T::try_from(y_end - y_start).expect("height overflow"))
+                .expect("height must be non-zero"),
+        );
+
+        let pending = parent.find(|span| span.y >= clip.y);
+
+        Self {
+            parent,
+            clip,
+            output_bounds,
+            pending,
+        }
     }
 }
 
 impl<TIter: ImageDimension, T: SignedNonZeroable> ImageDimension for ClipSpanIter<TIter, T> {
     fn bounds(&self) -> Rect<u32> {
-        self.parent.bounds()
+        self.output_bounds
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.parent.width()
+        self.output_bounds.width
     }
 }
 
@@ -31,15 +74,13 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let mut span = self.parent.next()?;
-            if span.y < self.bounds.y {
-                span = self.parent.find(|s| s.y >= self.bounds.y)?;
-            } else if span.y >= self.bounds.len_y().into() {
+            let span = self.pending.take().or_else(|| self.parent.next())?;
+            if span.y >= self.clip.len_y().into() {
                 return None;
             }
-            if let Ok(range) = NonZeroRange::try_from(
-                span.x.start.max(self.bounds.x)..span.x.end.min(self.bounds.len_x().into()),
-            ) {
+            let start = span.x.start.max(self.clip.x);
+            let end = span.x.end.min(self.clip.len_x().into());
+            if let Ok(range) = NonZeroRange::try_from(start..end) {
                 return Some(Span::new(range, span.y));
             }
         }
@@ -50,7 +91,7 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
 mod tests {
     use std::num::NonZeroU32;
 
-    use crate::{ImaskSet, Rect};
+    use crate::{ImageDimension, ImaskSet, Rect};
 
     use super::*;
 
@@ -61,12 +102,12 @@ mod tests {
     #[test]
     fn smaller_bounds_do_crop() {
         let src = Rect::new(10u32, 10, NON_ZERO_10, NON_ZERO_10);
-        let iter = src.into_spans();
         let bounds = Rect::new(12u32, 12, NON_ZERO_5, NON_ZERO_5);
         let expected = bounds.into_spans().collect::<Vec<_>>();
-        let clipped = ClipSpanIter::new(iter, bounds).collect::<Vec<_>>();
+        let clipped = ClipSpanIter::new(src.into_spans(), bounds).collect::<Vec<_>>();
         assert_eq!(expected, clipped);
     }
+
     #[test]
     fn bigger_bounds_have_no_effect() {
         let src = Rect::new(10u32, 10, NON_ZERO_10, NON_ZERO_10);
@@ -97,5 +138,29 @@ mod tests {
         )
         .collect::<Vec<_>>();
         assert_eq!(expected, clipped);
+    }
+
+    #[test]
+    fn clip_returns_intersection_bounds() {
+        let source = Rect::new(0u32, 0, NON_ZERO_100, NON_ZERO_100);
+        let roi = Rect::new(
+            10u32,
+            10,
+            NonZeroU32::new(80).unwrap(),
+            NonZeroU32::new(110).unwrap(),
+        );
+        let expected_bounds = Rect::new(
+            10u32,
+            10,
+            NonZeroU32::new(80).unwrap(),
+            NonZeroU32::new(90).unwrap(),
+        );
+
+        let clipped = ClipSpanIter::new(source.into_spans(), roi);
+        assert_eq!(expected_bounds, clipped.bounds());
+
+        let spans: Vec<_> = clipped.collect();
+        let expected_spans: Vec<_> = expected_bounds.into_spans().collect();
+        assert_eq!(expected_spans, spans);
     }
 }

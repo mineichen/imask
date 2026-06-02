@@ -10,6 +10,7 @@ use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
     UncheckedCast, WithBounds, WithRoi,
 };
+use crate::span::ClipSpanIter;
 #[cfg(feature = "range-set-blaze-0_5")]
 use num_traits::{CheckedSub, One, SaturatingSub, Zero};
 
@@ -84,6 +85,23 @@ pub trait ImaskSet: IntoIterator + Sized {
         Self::Item: Iterator<Item = Span<T>>,
     {
         crate::span::UnionAll::new(self)
+    }
+
+    fn clip<T>(
+        self,
+        roi: Rect<u32>,
+    ) -> ClipSpanIter<Self::IntoIter, T>
+    where
+        Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
+        T: SignedNonZeroable
+            + TryFrom<u32, Error: Debug>
+            + Ord
+            + Add<Output = T>
+            + Sub<Output = T>
+            + Copy
+            + Debug,
+    {
+        ClipSpanIter::new(self.into_iter(), roi)
     }
 
     fn try_clip_2d(
