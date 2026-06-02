@@ -4,6 +4,10 @@ use std::num::NonZero;
 use std::ops::{Add, Deref, Range, RangeInclusive, Sub};
 
 use num_traits::One;
+#[cfg(feature = "rkyv")]
+use rkyv::deserialize;
+#[cfg(feature = "serde")]
+use serde::Serialize;
 
 /// NonZero is only checked during Debug and should not be relied upon for safety
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -15,11 +19,46 @@ impl<T: Debug> Debug for NonZeroRange<T> {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de, T: serde::Deserialize<'de> + Debug + Ord> serde::Deserialize<'de> for NonZeroRange<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let [start, end] = <[T; 2]>::deserialize(deserializer)?;
+        RangeUnchecked { start, end }
+            .try_into()
+            .map_err(<D::Error as serde::de::Error>::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T: Serialize> serde::Serialize for NonZeroRange<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        [&self.0.start, &self.0.end].serialize(serializer)
+    }
+}
+
 /// Exists, because std::ops::Range is not Copy
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct RangeUnchecked<T> {
     pub start: T,
     pub end: T,
+}
+
+impl<T: Debug + PartialOrd> TryFrom<RangeUnchecked<T>> for NonZeroRange<T> {
+    type Error = RangeZeroLenghtError<RangeUnchecked<T>>;
+
+    fn try_from(value: RangeUnchecked<T>) -> Result<Self, Self::Error> {
+        if value.start < value.end {
+            Ok(Self(value))
+        } else {
+            Err(RangeZeroLenghtError(value))
+        }
+    }
 }
 
 impl NonZeroRange<u64> {

@@ -35,5 +35,5 @@ name = "span_iter"
 harness = false
 
 [features]
-default = ["range-set-blaze-0_5", "rkyv", "async-io"]
+default = ["range-set-blaze-0_5", "rkyv", "async-io", "serde"]
 async-io = ["futures-io", "futures-core", "pin-project-lite"]
