@@ -346,6 +346,61 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     {
         Self::try_from_ordered_iter_roi_internal(iter).map(|r| r.build(bounds))
     }
+    pub fn try_from_span_iter<TIter, T>(iter: TIter) -> Result<Self, io::Error>
+    where
+        TIter: IntoIterator<Item = Span<T>, IntoIter: ImageDimension>,
+        T: Copy + TryInto<u64, Error: Display>,
+        TIncluded: TryFrom<u64, Error: Display>,
+        TExcluded: TryFrom<u64, Error: Display>,
+    {
+        let mut iter = iter.into_iter();
+        let bounds = iter.bounds();
+        let width_u64: u64 = iter.width().get() as u64;
+
+        let Some(first) = iter.next() else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Requires at least one item",
+            ));
+        };
+
+        let y: u64 = first.y.try_into().map_err(invalid_data)?;
+        let mut merge_start: u64 =
+            y * width_u64 + first.x.start.try_into().map_err(invalid_data)?;
+        let mut merge_end: u64 = y * width_u64 + first.x.end.try_into().map_err(invalid_data)?;
+
+        let mut excluded: Vec<TExcluded> =
+            vec![TExcluded::try_from(merge_start).map_err(invalid_data)?];
+        let mut included: Vec<TIncluded> = Vec::with_capacity(iter.size_hint().0 + 1);
+
+        for span in iter {
+            let y: u64 = span.y.try_into().map_err(invalid_data)?;
+            let start = y * width_u64 + span.x.start.try_into().map_err(invalid_data)?;
+            let end = y * width_u64 + span.x.end.try_into().map_err(invalid_data)?;
+
+            if start == merge_end {
+                merge_end = end;
+            } else {
+                if start < merge_end {
+                    return Err(invalid_data(format!(
+                        "spans must be sorted and non-overlapping: previous end ({merge_end}) > next start ({start})"
+                    )));
+                }
+                included.push(TIncluded::try_from(merge_end - merge_start).map_err(invalid_data)?);
+                excluded.push(TExcluded::try_from(start - merge_end).map_err(invalid_data)?);
+                merge_start = start;
+                merge_end = end;
+            }
+        }
+        included.push(TIncluded::try_from(merge_end - merge_start).map_err(invalid_data)?);
+
+        Ok(Self {
+            included,
+            excluded,
+            bounds,
+        })
+    }
+
     fn try_from_ordered_iter_roi_internal<TIter>(
         iter: TIter,
     ) -> Result<Builder<TIncluded, TExcluded>, io::Error>
@@ -781,6 +836,80 @@ mod tests {
         assert_eq!(1, ranges.len());
         let roi: Vec<_> = ranges.iter_roi::<Range<u64>>().collect();
         assert_eq!(vec![0u64..25], roi);
+    }
+
+    #[test]
+    fn try_from_span_iter_roundtrip() -> TestResult {
+        let original = SortedRanges::<u32, u32>::try_from_ordered_iter(
+            [0u32..1000, 1001..2000].with_roi(TEST_BOUNDS),
+        )?;
+        let spans: Vec<_> = original.spans::<u32>().collect();
+
+        let reconstructed = SortedRanges::<u32, u32>::try_from_span_iter(
+            spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
+        )?;
+
+        assert_eq!(
+            original.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+            reconstructed.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn try_from_span_iter_empty_returns_error() {
+        let spans: Vec<Span<u32>> = vec![];
+        let result = SortedRanges::<u32, u32>::try_from_span_iter(
+            spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("at least one"));
+    }
+
+    #[test]
+    fn try_from_span_iter_overlapping_returns_error() {
+        let spans = vec![Span::new(0u32..500, 0u32), Span::new(0u32..500, 0u32)];
+        let result = SortedRanges::<u64, u64>::try_from_span_iter(
+            spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("non-overlapping"));
+    }
+
+    #[test]
+    fn try_from_span_iter_preserves_bounds_offset() -> TestResult {
+        let bounds_with_offset = Rect::new(
+            1,
+            1,
+            NonZero::new(4u32).unwrap(),
+            NonZero::new(4u32).unwrap(),
+        );
+        let spans = vec![Span::new(1u32..2, 1u32), Span::new(1u32..2, 2u32)];
+
+        let reconstructed = SortedRanges::<u32, u32>::try_from_span_iter(
+            spans.clone().with_roi(bounds_with_offset),
+        )?;
+
+        assert_eq!(bounds_with_offset, ImageDimension::bounds(&reconstructed));
+        assert_eq!(spans, reconstructed.spans().collect::<Vec<_>>());
+        Ok(())
+    }
+
+    #[test]
+    fn try_from_span_iter_u16_max_width_two_rows() -> TestResult {
+        const WIDTH: NonZeroU32 = NonZero::new(u16::MAX as u32).unwrap();
+        const HEIGHT: NonZeroU32 = NonZero::new(2u32).unwrap();
+        let spans = vec![
+            Span::new(0u16..u16::MAX, 0u16),
+            Span::new(0u16..u16::MAX, 1u16),
+        ];
+
+        let result =
+            SortedRanges::<u64, u64>::try_from_span_iter(spans.with_bounds(WIDTH, HEIGHT))?;
+
+        let ranges: Vec<Range<u64>> = result.iter_roi().collect();
+        assert_eq!(vec![0u64..131070], ranges);
+        Ok(())
     }
 }
 
