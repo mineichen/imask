@@ -48,7 +48,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let width = self.width.get();
 
-        let pos = (&mut self.iter).filter(|(_, x)| *x).next()?.0;
+        let pos = self.iter.find(|(_, x)| *x)?.0;
         let pos: u32 = pos.cast_unchecked();
         let y = pos / width;
         let x_start = pos - y * width;
@@ -60,13 +60,13 @@ where
                 None => break,
             }
         }
-        return Some(Span {
+        Some(Span {
             x: NonZeroRange::new_debug_checked_zeroable(
                 x_start.cast_unchecked(),
                 (x_start + run_len).cast_unchecked(),
             ),
             y: y.cast_unchecked(),
-        });
+        })
     }
 }
 

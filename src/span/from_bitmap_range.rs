@@ -43,7 +43,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let pos = (&mut self.iter).filter(|(_, is_set)| *is_set).next()?.0;
+        let pos = self.iter.find(|(_, is_set)| *is_set)?.0;
         let start: u32 = pos.cast_unchecked();
         let mut end = start + 1;
         loop {
@@ -53,10 +53,10 @@ where
                 None => break,
             }
         }
-        return Some(TRange::new_debug_checked_zeroable(
+        Some(TRange::new_debug_checked_zeroable(
             start.cast_unchecked(),
             end.cast_unchecked(),
-        ));
+        ))
     }
 }
 

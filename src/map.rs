@@ -8,7 +8,7 @@ use num_traits::Zero;
 
 use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesIter,
-    SortedRangesSpanIter, UncheckedCast,
+    SortedRangesSliceIter, SortedRangesSpanIter, UncheckedCast,
 };
 
 mod iter;
@@ -61,6 +61,8 @@ impl<TIncluded: UncheckedCast<u64>, TExcluded: UncheckedCast<u64>, TMeta: Debug>
 }
 
 type CopiedSliceIter<'a, T> = std::iter::Copied<std::slice::Iter<'a, T>>;
+type SortedRangesVecIter<TIncluded, TExcluded, T> =
+    SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>;
 
 impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMeta>> {
     pub fn new<TRange>(r: NonZeroRange<TRange>, meta: TMeta, bounds: Rect<u32>) -> Self
@@ -184,13 +186,7 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
         )
     }
 
-    pub fn ranges<T: CreateRange>(
-        &self,
-    ) -> SortedRangesIter<
-        std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
-        std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-        T,
-    >
+    pub fn ranges<T: CreateRange>(&self) -> SortedRangesSliceIter<'_, TIncluded, TExcluded, T>
     where
         TIncluded: UncheckedCast<T::Item>,
         TExcluded: UncheckedCast<T::Item>,
@@ -204,9 +200,7 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
             self.bounds.height,
         )
     }
-    pub fn ranges_owned<T: CreateRange>(
-        self,
-    ) -> SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>
+    pub fn ranges_owned<T: CreateRange>(self) -> SortedRangesVecIter<TIncluded, TExcluded, T>
     where
         TIncluded: UncheckedCast<T::Item>,
         TExcluded: UncheckedCast<T::Item>,
@@ -223,13 +217,7 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
 
     pub fn spans<T>(
         &self,
-    ) -> SortedRangesSpanIter<
-        SortedRangesIter<
-            std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
-            std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-            NonZeroRange<T>,
-        >,
-    >
+    ) -> SortedRangesSpanIter<SortedRangesSliceIter<'_, TIncluded, TExcluded, NonZeroRange<T>>>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
         TIncluded: UncheckedCast<T>,
@@ -241,13 +229,7 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
 
     pub fn spans_owned<T>(
         self,
-    ) -> SortedRangesSpanIter<
-        SortedRangesIter<
-            std::vec::IntoIter<TIncluded>,
-            std::vec::IntoIter<TExcluded>,
-            NonZeroRange<T>,
-        >,
-    >
+    ) -> SortedRangesSpanIter<SortedRangesVecIter<TIncluded, TExcluded, NonZeroRange<T>>>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
         TIncluded: UncheckedCast<T>,

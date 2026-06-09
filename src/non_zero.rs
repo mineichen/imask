@@ -4,8 +4,6 @@ use std::num::NonZero;
 use std::ops::{Add, Deref, Range, RangeInclusive, Sub};
 
 use num_traits::One;
-#[cfg(feature = "rkyv")]
-use rkyv::deserialize;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 

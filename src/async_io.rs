@@ -35,7 +35,7 @@ impl Roi {
         }
     }
 
-    fn to_bytes(&self) -> [u8; U32_SIZE * 4] {
+    fn to_bytes(self) -> [u8; U32_SIZE * 4] {
         let mut buf = [0u8; U32_SIZE * 4];
         write_u32(&mut buf[..], self.offset_x);
         write_u32(&mut buf[U32_SIZE..], self.offset_y);
@@ -381,7 +381,7 @@ impl<R: AsyncRead + Unpin> Future for HeaderReader<R> {
     type Output = io::Result<Header>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
+        let this = self.project();
         ready!(poll_read_exact(
             this.reader,
             cx,

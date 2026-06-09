@@ -6,13 +6,11 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
+use crate::span::ClipSpanIter;
 use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
     UncheckedCast, WithBounds, WithRoi,
 };
-use crate::span::ClipSpanIter;
-#[cfg(feature = "range-set-blaze-0_5")]
-use num_traits::{CheckedSub, One, SaturatingSub, Zero};
 
 fn invalid_data<T: Display>(e: T) -> std::io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
@@ -44,6 +42,12 @@ pub use offsets_iter::*;
 pub use rect::*;
 pub use sanitize_sorted_disjoint::*;
 // pub use split_rows::*;
+
+pub(crate) type SortedRangesSliceIter<'a, TIncluded, TExcluded, T> = SortedRangesIter<
+    std::iter::Copied<std::slice::Iter<'a, TIncluded>>,
+    std::iter::Copied<std::slice::Iter<'a, TExcluded>>,
+    T,
+>;
 
 pub trait ImaskSet: IntoIterator + Sized {
     // /// # Panics
@@ -87,10 +91,7 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::UnionAll::new(self)
     }
 
-    fn clip<T>(
-        self,
-        roi: Rect<u32>,
-    ) -> ClipSpanIter<Self::IntoIter, T>
+    fn clip<T>(self, roi: Rect<u32>) -> ClipSpanIter<Self::IntoIter, T>
     where
         Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
         T: SignedNonZeroable
@@ -153,10 +154,10 @@ pub trait ImaskSet: IntoIterator + Sized {
             + Copy
             + Debug
             + Add<Output = T>
-            + SaturatingSub<Output = T>
+            + num_traits::SaturatingSub<Output = T>
             + crate::CheckedAddSigned
-            + One
-            + Zero
+            + num_traits::One
+            + num_traits::Zero
             + SignedNonZeroable
             + UncheckedCast<u32>,
         Self::IntoIter: Iterator<Item = Span<T>> + Clone + ImageDimension,
@@ -175,12 +176,12 @@ pub trait ImaskSet: IntoIterator + Sized {
                 Item: SignedNonZeroable
                           + Debug
                           + Add<Output = <Self::Item as CreateRange>::Item>
-                          + SaturatingSub<Output = <Self::Item as CreateRange>::Item>
-                          + CheckedSub<Output = <Self::Item as CreateRange>::Item>
+                          + num_traits::SaturatingSub<Output = <Self::Item as CreateRange>::Item>
+                          + num_traits::CheckedSub<Output = <Self::Item as CreateRange>::Item>
                           + Copy
                           + range_set_blaze_0_5::Integer
-                          + Zero
-                          + One,
+                          + num_traits::Zero
+                          + num_traits::One,
             >,
         Self::IntoIter: 'a + std::iter::FusedIterator<Item = Self::Item> + Clone + ImageDimension,
         SanitizeSortedDisjoint<DilateXIter<Self::IntoIter>>: Iterator<Item = Self::Item>,
@@ -493,13 +494,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     }
     pub fn spans<T>(
         &self,
-    ) -> SortedRangesSpanIter<
-        SortedRangesIter<
-            std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
-            std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-            NonZeroRange<T>,
-        >,
-    >
+    ) -> SortedRangesSpanIter<SortedRangesSliceIter<'_, TIncluded, TExcluded, NonZeroRange<T>>>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
         TIncluded: UncheckedCast<T>,
