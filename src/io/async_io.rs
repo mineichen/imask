@@ -1,7 +1,6 @@
 use std::{
     future::Future,
     io::{self, ErrorKind},
-    num::NonZeroU32,
     ops::Sub,
     pin::Pin,
     task::{Context, Poll, ready},
@@ -10,122 +9,9 @@ use std::{
 use futures_io::{AsyncRead, AsyncWrite};
 use pin_project_lite::pin_project;
 
-use crate::{CreateRange, ImageDimension, NonZeroRange};
+use super::{HEADER_SIZE, U64_SIZE, header::Header, roi::Roi};
+use crate::{CreateRange, ImageDimension, NonZeroRange, io::header::DataType};
 
-const U32_SIZE: usize = std::mem::size_of::<u32>();
-const U64_SIZE: usize = std::mem::size_of::<u64>();
-const PROTOCOL_VERSION: u8 = 1;
-const HEADER_SIZE: usize = 3 + U32_SIZE * 4;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Roi {
-    pub offset_x: u32,
-    pub offset_y: u32,
-    pub width: NonZeroU32,
-    pub height: NonZeroU32,
-}
-
-impl Roi {
-    pub const fn new(offset_x: u32, offset_y: u32, width: NonZeroU32, height: NonZeroU32) -> Self {
-        Self {
-            offset_x,
-            offset_y,
-            width,
-            height,
-        }
-    }
-
-    fn to_bytes(self) -> [u8; U32_SIZE * 4] {
-        let mut buf = [0u8; U32_SIZE * 4];
-        write_u32(&mut buf[..], self.offset_x);
-        write_u32(&mut buf[U32_SIZE..], self.offset_y);
-        write_u32(&mut buf[U32_SIZE * 2..], self.width.get());
-        write_u32(&mut buf[U32_SIZE * 3..], self.height.get());
-        buf
-    }
-
-    fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
-        let width_pos = U32_SIZE * 2;
-        let height_pos = U32_SIZE * 3;
-        Ok(Self {
-            offset_x: read_u32(bytes),
-            offset_y: read_u32(&bytes[U32_SIZE..]),
-            width: read_u32(&bytes[width_pos..]).try_into().map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidData, "Unexpected zero for width")
-            })?,
-            height: read_u32(&bytes[height_pos..]).try_into().map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidData, "Unexpected zero for height")
-            })?,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum DataType {
-    U64 = 0,
-}
-
-impl TryFrom<u8> for DataType {
-    type Error = io::Error;
-    fn try_from(value: u8) -> io::Result<Self> {
-        match value {
-            0 => Ok(DataType::U64),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unsupported data type: {value}"),
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Header {
-    version: u8,
-    included_type: DataType,
-    excluded_type: DataType,
-    roi: Roi,
-}
-
-impl Header {
-    fn new(included_type: DataType, excluded_type: DataType, roi: Roi) -> Self {
-        Self {
-            version: PROTOCOL_VERSION,
-            excluded_type,
-            included_type,
-            roi,
-        }
-    }
-    fn to_bytes(&self) -> [u8; HEADER_SIZE] {
-        let mut buf = [0u8; HEADER_SIZE];
-        buf[0] = self.version;
-        buf[1] = self.included_type as u8;
-        buf[2] = self.excluded_type as u8;
-        buf[3..].copy_from_slice(&self.roi.to_bytes());
-        buf
-    }
-    fn from_bytes(bytes: &[u8; HEADER_SIZE]) -> io::Result<Self> {
-        if bytes[0] != PROTOCOL_VERSION {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unsupported protocol version: {:#x}", bytes[0]),
-            ));
-        }
-        Ok(Self {
-            version: bytes[0],
-            included_type: DataType::try_from(bytes[1])?,
-            excluded_type: DataType::try_from(bytes[2])?,
-            roi: Roi::from_bytes(&bytes[3..])?,
-        })
-    }
-}
-
-fn write_u32(buf: &mut [u8], val: u32) {
-    buf[..U32_SIZE].copy_from_slice(&val.to_le_bytes());
-}
-fn read_u32(buf: &[u8]) -> u32 {
-    u32::from_le_bytes(buf[..U32_SIZE].try_into().unwrap())
-}
 fn write_u64(buf: &mut [u8], val: u64) {
     buf[..8].copy_from_slice(&val.to_le_bytes());
 }
@@ -444,10 +330,6 @@ impl<R: AsyncRead + Unpin> AsyncRangeStream<R> {
         })
     }
 
-    pub fn roi(&self) -> Roi {
-        self.roi
-    }
-
     pub fn into_roi_stream(self) -> Self {
         Self {
             local: true,
@@ -542,12 +424,13 @@ impl<R: AsyncRead> futures_core::Stream for AsyncRangeStream<R> {
 #[cfg(test)]
 mod tests {
 
-    use std::io::ErrorKind;
     use std::ops::RangeInclusive;
+    use std::{io::ErrorKind, num::NonZeroU32};
 
     use futures_util::TryStreamExt;
     use testresult::TestResult;
 
+    use crate::io::PROTOCOL_VERSION;
     use crate::{Rect, WithRoi};
 
     use super::*;
@@ -923,7 +806,7 @@ mod tests {
         .unwrap();
         let expected: Vec<_> = sorted.iter_roi::<NonZeroRange<u64>>().collect();
 
-        let roi = Roi::new(0, 0, NONZERO_1000, NONZERO_1000);
+        let roi = Rect::new(0, 0, NONZERO_1000, NONZERO_1000);
         let phase1_buf = {
             let mut buf = Vec::new();
             AsyncRangeWriter::new(
@@ -936,7 +819,7 @@ mod tests {
         };
 
         let reader = AsyncRangeStream::new(&phase1_buf[..]).await.unwrap();
-        let reader_roi = reader.roi();
+        let reader_roi = reader.bounds();
         assert_eq!(roi, reader_roi);
 
         let mut phase2_buf = Vec::new();
