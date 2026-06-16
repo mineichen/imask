@@ -4,10 +4,9 @@
 /// Working with ranges or collections/iterators of ranges
 ///
 mod assert_sorted_iter;
-#[cfg(feature = "async-io")]
-mod async_io;
 mod checked_add_signed;
 mod create_range;
+mod io;
 mod map;
 mod non_zero;
 mod rect;
@@ -20,10 +19,10 @@ mod with_roi;
 use std::num::NonZero;
 
 pub use assert_sorted_iter::*;
-#[cfg(feature = "async-io")]
-pub use async_io::*;
 pub(crate) use checked_add_signed::CheckedAddSigned;
 pub use create_range::*;
+#[cfg(feature = "async-io")]
+pub use io::*;
 pub use map::*;
 pub use non_zero::*;
 pub use rect::*;
