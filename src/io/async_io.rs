@@ -1,7 +1,6 @@
 use std::{
     future::Future,
     io::{self, ErrorKind},
-    ops::Sub,
     pin::Pin,
     task::{Context, Poll, ready},
 };
@@ -56,13 +55,13 @@ fn poll_read_exact<R: AsyncRead + ?Sized>(
 }
 
 trait IntoRangeResult {
-    type Range: CreateRange<Item: Sub<Output = <Self::Range as CreateRange>::Item> + Into<u64>>;
+    type Range: CreateRange<Item: Into<u64>>;
     fn into_range_result(self) -> io::Result<Self::Range>;
 }
 
 impl<T> IntoRangeResult for T
 where
-    T: CreateRange<Item: Sub<Output = <T as CreateRange>::Item> + Into<u64>>,
+    T: CreateRange<Item: Into<u64>>,
 {
     type Range = T;
     fn into_range_result(self) -> io::Result<Self::Range> {
@@ -72,13 +71,21 @@ where
 
 impl<T, E> IntoRangeResult for Result<T, E>
 where
-    T: CreateRange<Item: Sub<Output = <T as CreateRange>::Item> + Into<u64>>,
+    T: CreateRange<Item: Into<u64>>,
     E: Into<io::Error>,
 {
     type Range = T;
     fn into_range_result(self) -> io::Result<Self::Range> {
         self.map_err(Into::into)
     }
+}
+
+enum WriterState {
+    Header,
+    ReadRange,
+    WriteBuf,
+    Closing,
+    Done,
 }
 
 pin_project! {
@@ -90,16 +97,7 @@ pin_project! {
         pos: usize,
         len: usize,
         last_end: u64,
-        pending_range: Option<(u64, u64, u64, u64)>,
     }
-}
-
-enum WriterState {
-    Header,
-    ReadRange,
-    WriteBuf,
-    Closing,
-    Done,
 }
 
 impl<W, S> AsyncRangeWriter<W, S> {
@@ -112,7 +110,6 @@ impl<W, S> AsyncRangeWriter<W, S> {
             pos: 0,
             len: 0,
             last_end: 0,
-            pending_range: None,
         }
     }
 }
@@ -145,74 +142,33 @@ where
                 WriterState::ReadRange => match ready!(this.stream.as_mut().poll_next(cx)) {
                     Some(item) => {
                         let r = item.into_range_result()?;
-                        let (global_start, global_end) = (r.start().into(), r.end().into());
-                        let flat_offset = (u64::from(roi.width.get()))
-                            .wrapping_mul(u64::from(roi.offset_y))
-                            .wrapping_add(u64::from(roi.offset_x));
-                        let start = global_start - flat_offset;
-                        let end = global_end - flat_offset;
-                        let len = end - start;
-                        let width = u64::from(roi.width.get());
-                        let ox = u64::from(roi.offset_x);
-                        if let Some((pending_start, pending_len, pending_actual_end, gap_base)) =
-                            *this.pending_range
-                        {
-                            if start < pending_actual_end {
-                                return Poll::Ready(Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    format!(
-                                        "Range start {start} is before previous end {pending_actual_end}"
-                                    ),
-                                )));
-                            }
-                            let pending_ends_at_line_end =
-                                ox > 0 && (pending_actual_end + ox) % width == 0;
-                            let next_starts_at_line_start = (start + ox) % width == ox;
-                            if pending_ends_at_line_end
-                                && next_starts_at_line_start
-                                && start == pending_actual_end + ox
-                            {
-                                *this.pending_range =
-                                    Some((pending_start, pending_len + len, end, gap_base));
-                                *this.last_end = end;
-                                *this.state = WriterState::ReadRange;
-                            } else {
-                                let gap = pending_start - gap_base;
-                                write_u64(&mut this.buf[..], gap);
-                                write_u64(&mut this.buf[U64_SIZE..], pending_len);
-                                *this.pending_range = Some((start, len, end, *this.last_end));
-                                *this.last_end = end;
-                                *this.len = U64_SIZE * 2;
-                                *this.state = WriterState::WriteBuf;
-                            }
-                        } else {
-                            if start < *this.last_end {
-                                return Poll::Ready(Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    format!(
-                                        "Range start {start} is before previous end {}",
-                                        *this.last_end
-                                    ),
-                                )));
-                            }
-                            *this.pending_range = Some((start, len, end, *this.last_end));
-                            *this.last_end = end;
-                            *this.state = WriterState::ReadRange;
+                        let start: u64 = r.start().into();
+                        let end: u64 = r.end().into();
+                        if *this.last_end > 0 && start <= *this.last_end {
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!(
+                                    "Range start {start} must be > previous end {}",
+                                    *this.last_end
+                                ),
+                            )));
                         }
+                        let gap = start - *this.last_end;
+                        let len = end - start;
+                        write_u64(&mut this.buf[..], gap);
+                        write_u64(&mut this.buf[U64_SIZE..], len);
+                        *this.last_end = end;
+                        *this.len = U64_SIZE * 2;
+                        *this.state = WriterState::WriteBuf;
                     }
                     None => {
-                        if let Some((pending_start, pending_len, _pending_actual_end, gap_base)) =
-                            *this.pending_range
-                        {
-                            let gap = pending_start - gap_base;
-                            write_u64(&mut this.buf[..], gap);
-                            write_u64(&mut this.buf[U64_SIZE..], pending_len);
-                            *this.pending_range = None;
-                            *this.len = U64_SIZE * 2;
-                            *this.state = WriterState::WriteBuf;
-                        } else {
-                            *this.state = WriterState::Closing;
+                        if *this.last_end == 0 {
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::InvalidInput,
+                                "Expected at least 1 range",
+                            )));
                         }
+                        *this.state = WriterState::Closing;
                     }
                 },
                 WriterState::WriteBuf => {
@@ -223,17 +179,10 @@ where
                         this.pos
                     ))?;
                     *this.pos = 0;
-                    *this.len = U64_SIZE * 2;
                     *this.state = WriterState::ReadRange;
                 }
                 WriterState::Closing => {
                     ready!(this.writer.as_mut().poll_close(cx))?;
-                    if *this.last_end == 0 {
-                        return Poll::Ready(Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Expected at least 1 range",
-                        )));
-                    }
                     *this.state = WriterState::Done;
                 }
                 WriterState::Done => {
@@ -285,11 +234,6 @@ pin_project! {
         buf: [u8; U64_SIZE * 2],
         pos: usize,
         last_end: u64,
-        offset: u64,
-        local: bool,
-        pending_local_start: u64,
-        pending_local_len: u64,
-        crossed_line_gaps: u64,
     }
 }
 
@@ -309,32 +253,16 @@ impl<R> ImageDimension for AsyncRangeStream<R> {
 }
 
 impl<R: AsyncRead + Unpin> AsyncRangeStream<R> {
-    #[allow(clippy::new_ret_no_self)]
     pub async fn new(mut reader: R) -> io::Result<Self> {
         let header = HeaderReader::new(&mut reader).await?;
         let roi = header.roi;
-        let offset = u64::from(roi.width.get())
-            .wrapping_mul(u64::from(roi.offset_y))
-            .wrapping_add(u64::from(roi.offset_x));
         Ok(AsyncRangeStream {
             reader,
             roi,
-            offset,
             buf: [0; U64_SIZE * 2],
             pos: 0,
             last_end: 0,
-            local: false,
-            pending_local_start: 0,
-            pending_local_len: 0,
-            crossed_line_gaps: 0,
         })
-    }
-
-    pub fn into_roi_stream(self) -> Self {
-        Self {
-            local: true,
-            ..self
-        }
     }
 }
 
@@ -343,35 +271,6 @@ impl<R: AsyncRead> futures_core::Stream for AsyncRangeStream<R> {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
-
-        if *this.pending_local_len > 0 {
-            let width = u64::from(this.roi.width.get());
-            let ox = u64::from(this.roi.offset_x);
-            let ls = *this.pending_local_start;
-            let local_end = ls + *this.pending_local_len;
-            let global_start = ls + *this.offset;
-            if ox == 0 {
-                *this.pending_local_len = 0;
-                let chunk = local_end - ls;
-                let ge = global_start + chunk - 1;
-                return Poll::Ready(Some(Ok(NonZeroRange::new(global_start..ge + 1))));
-            }
-            let global_start_line = (global_start + ox) / width;
-            let local_line_end = (global_start_line + 1) * width - *this.offset;
-            if local_line_end >= local_end {
-                *this.pending_local_len = 0;
-                let chunk = local_end - ls;
-                let ge = global_start + chunk - 1;
-                return Poll::Ready(Some(Ok(NonZeroRange::new(global_start..ge + 1))));
-            } else {
-                let chunk = local_line_end - ls;
-                *this.pending_local_start = local_line_end + ox;
-                *this.pending_local_len -= chunk;
-                *this.crossed_line_gaps += 1;
-                let ge = global_start + chunk - 1;
-                return Poll::Ready(Some(Ok(NonZeroRange::new(global_start..ge + 1))));
-            }
-        }
 
         match ready!(poll_read_exact(
             this.reader.as_mut(),
@@ -389,31 +288,7 @@ impl<R: AsyncRead> futures_core::Stream for AsyncRangeStream<R> {
                 let end = start + len;
                 *this.last_end = end;
                 *this.pos = 0;
-                if *this.local {
-                    Poll::Ready(Some(Ok(NonZeroRange::new(start..end))))
-                } else {
-                    let width = u64::from(this.roi.width.get());
-                    let ox = u64::from(this.roi.offset_x);
-                    let global_start = start + *this.offset;
-                    if ox == 0 {
-                        let ge = global_start + len - 1;
-                        Poll::Ready(Some(Ok(NonZeroRange::new(global_start..ge + 1))))
-                    } else {
-                        let global_start_line = (global_start + ox) / width;
-                        let local_line_end = (global_start_line + 1) * width - *this.offset;
-                        if local_line_end >= end {
-                            let ge = global_start + len - 1;
-                            Poll::Ready(Some(Ok(NonZeroRange::new(global_start..ge + 1))))
-                        } else {
-                            let chunk = local_line_end - start;
-                            *this.pending_local_start = local_line_end + ox;
-                            *this.pending_local_len = end - local_line_end;
-                            *this.crossed_line_gaps = 1;
-                            let ge = global_start + chunk - 1;
-                            Poll::Ready(Some(Ok(NonZeroRange::new(global_start..ge + 1))))
-                        }
-                    }
-                }
+                Poll::Ready(Some(Ok(NonZeroRange::new(start..end))))
             }
             Err(e) if *this.pos == 0 && e.kind() == ErrorKind::UnexpectedEof => Poll::Ready(None),
             Err(e) => Poll::Ready(Some(Err(e))),
@@ -484,10 +359,7 @@ mod tests {
             .collect();
         let mut buf = Vec::new();
         let stream = with_1000_roi(ranges.map(Ok::<_, io::Error>));
-        let writer = AsyncRangeWriter::new(
-            &mut buf, stream,
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        );
+        let writer = AsyncRangeWriter::new(&mut buf, stream);
         writer.await.unwrap();
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
         let result: Vec<_> = reader.try_collect().await.unwrap();
@@ -504,13 +376,9 @@ mod tests {
     async fn write_empty_error() {
         let input: [RangeInclusive<u64>; 0] = [];
         let writer = Vec::new();
-        let _err = AsyncRangeWriter::new(
-            writer,
-            with_1000_roi(input),
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        )
-        .await
-        .unwrap_err();
+        let _err = AsyncRangeWriter::new(writer, with_1000_roi(input))
+            .await
+            .unwrap_err();
     }
 
     #[tokio::test]
@@ -525,11 +393,7 @@ mod tests {
     async fn overlapping_ranges_error() {
         let mut buf = Vec::new();
         let ranges = vec![10..=20u64, 15..=25];
-        let writer = AsyncRangeWriter::new(
-            &mut buf,
-            with_1000_roi(ranges),
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        );
+        let writer = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges));
         let result = writer.await;
         assert!(matches!(result, Err(e) if e.kind() == ErrorKind::InvalidData));
     }
@@ -538,11 +402,16 @@ mod tests {
     async fn out_of_order_ranges_error() {
         let mut buf = Vec::new();
         let ranges = vec![50..=60u64, 10..=20];
-        let writer = AsyncRangeWriter::new(
-            &mut buf,
-            with_1000_roi(ranges),
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        );
+        let writer = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges));
+        let result = writer.await;
+        assert!(matches!(result, Err(e) if e.kind() == ErrorKind::InvalidData));
+    }
+
+    #[tokio::test]
+    async fn adjacent_ranges_error() {
+        let mut buf = Vec::new();
+        let ranges = vec![10..=20u64, 21..=30];
+        let writer = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges));
         let result = writer.await;
         assert!(matches!(result, Err(e) if e.kind() == ErrorKind::InvalidData));
     }
@@ -619,33 +488,11 @@ mod tests {
     async fn single_range_roundtrip() {
         let ranges = vec![100..=200u64];
         let mut buf = Vec::new();
-        let writer = AsyncRangeWriter::new(
-            &mut buf,
-            with_1000_roi(ranges),
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        );
+        let writer = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges));
         writer.await.unwrap();
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
         let result: Vec<_> = reader.try_collect().await.unwrap();
         assert_eq!(result, vec![NonZeroRange::new(100u64..201)]);
-    }
-
-    #[tokio::test]
-    async fn adjacent_ranges_roundtrip() {
-        let ranges = vec![10..=20u64, 21..=30];
-        let mut buf = Vec::new();
-        let writer = AsyncRangeWriter::new(
-            &mut buf,
-            with_1000_roi(ranges),
-            // Roi::new(0, 0, NONZERO_1000, NONZERO_1000),
-        );
-        writer.await.unwrap();
-        let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
-        let result: Vec<_> = reader.try_collect().await.unwrap();
-        assert_eq!(
-            result,
-            vec![NonZeroRange::new(10u64..21), NonZeroRange::new(21u64..31)]
-        );
     }
 
     #[tokio::test]
@@ -708,11 +555,7 @@ mod tests {
 
         let writer = FailingWriter;
         let ranges = vec![10..=20u64];
-        let async_writer = AsyncRangeWriter::new(
-            writer,
-            with_1000_roi(ranges),
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        );
+        let async_writer = AsyncRangeWriter::new(writer, with_1000_roi(ranges));
         let result = async_writer.await;
         let Err(e) = result else {
             panic!("Expected Custom io error");
@@ -721,77 +564,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn offset_zero_produces_same_ranges() {
-        let global_ranges: Vec<RangeInclusive<u64>> = vec![5..=10, 100..=200];
-        let mut buf = Vec::new();
-        let writer = AsyncRangeWriter::new(
-            &mut buf,
-            with_1000_roi(global_ranges.clone()),
-            // Roi::new(0, 0, NONZERO_1000, NONZERO_1000),
-        );
-        writer.await.unwrap();
-
-        let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
-        let result: Vec<_> = reader.try_collect().await.unwrap();
-
-        let expected: Vec<_> = global_ranges
-            .iter()
-            .map(|r| NonZeroRange::new(*r.start()..*r.end() + 1))
-            .collect();
-        assert_eq!(result, expected);
-    }
-
-    #[tokio::test]
-    async fn rectangle_offset_local_single_element() {
-        use crate::Rect;
-
-        let offset_x = 3;
-        let offset_y = 5;
+    async fn rectangle_roundtrip_local() {
+        let offset_x = 3u32;
+        let offset_y = 5u32;
         let width = NonZeroU32::new(20).unwrap();
         let height = NonZeroU32::new(3).unwrap();
+        let content_width = width.get() - offset_x;
 
-        let rect = Rect::new(
-            offset_x,
-            offset_y,
-            NonZeroU32::new(width.get() - offset_x).unwrap(),
-            height,
-        );
-        let global_ranges: Vec<RangeInclusive<u64>> = rect
-            .into_rect_iter::<RangeInclusive<u32>>(width)
-            .map(|r| *r.start() as u64..=*r.end() as u64)
+        let roi = Rect::new(offset_x, offset_y, width, height);
+
+        let local_ranges: Vec<RangeInclusive<u64>> = (0u64..height.get() as u64)
+            .map(|i| {
+                let s = i * width.get() as u64;
+                let e = s + content_width as u64 - 1;
+                s..=e
+            })
             .collect();
 
-        assert_eq!(global_ranges, vec![103..=119, 123..=139, 143..=159]);
+        assert_eq!(local_ranges, vec![0..=16, 20..=36, 40..=56]);
 
         let mut buf = Vec::new();
         let writer = AsyncRangeWriter::new(
             &mut buf,
             WithRoi::new(
-                futures_util::stream::iter(global_ranges.clone()),
-                Rect {
-                    x: offset_x,
-                    y: offset_y,
-                    width,
-                    height,
-                },
-            ), // Roi::new(offset_x, offset_y, width, height),
+                futures_util::stream::iter(
+                    local_ranges
+                        .iter()
+                        .into_iter()
+                        .map(|x| std::io::Result::Ok(x.clone())),
+                ),
+                roi,
+            ),
         );
         writer.await.unwrap();
 
-        let local_reader = AsyncRangeStream::new(&buf[..])
-            .await
-            .unwrap()
-            .into_roi_stream();
-        let local_result: Vec<_> = local_reader.try_collect().await.unwrap();
-        assert_eq!(local_result, vec![NonZeroRange::new(0u64..(3 * 17))]);
+        let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
+        let reader_roi = reader.bounds();
+        assert_eq!(roi, reader_roi);
 
-        let global_reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
-        let global_result: Vec<_> = global_reader
-            .map_ok(RangeInclusive::<u64>::from)
-            .try_collect()
-            .await
-            .unwrap();
-        assert_eq!(global_result, global_ranges);
+        let result: Vec<_> = reader.try_collect().await.unwrap();
+        let expected: Vec<_> = local_ranges
+            .iter()
+            .map(|r| NonZeroRange::new(*r.start()..*r.end() + 1))
+            .collect();
+        assert_eq!(result, expected);
     }
 
     #[tokio::test]
@@ -812,7 +628,6 @@ mod tests {
             AsyncRangeWriter::new(
                 &mut buf,
                 with_1000_roi(sorted.iter_roi::<NonZeroRange<u64>>()),
-                // roi,
             )
             .await?;
             buf
@@ -823,7 +638,7 @@ mod tests {
         assert_eq!(roi, reader_roi);
 
         let mut phase2_buf = Vec::new();
-        AsyncRangeWriter::new(&mut phase2_buf, reader /*  reader_roi*/)
+        AsyncRangeWriter::new(&mut phase2_buf, reader)
             .await
             .unwrap();
 
@@ -842,12 +657,7 @@ mod tests {
             Err(io::Error::new(io::ErrorKind::Other, "source error")),
         ];
         let mut buf = Vec::new();
-        let result = AsyncRangeWriter::new(
-            &mut buf,
-            with_1000_roi(ranges),
-            // Roi::new(0, 0, NonZeroU32::MIN, NonZeroU32::MIN),
-        )
-        .await;
+        let result = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges)).await;
         assert!(matches!(result, Err(e) if e.kind() == ErrorKind::Other));
     }
 }
