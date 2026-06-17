@@ -8,7 +8,7 @@ mod sync_io;
 #[cfg(feature = "async-io")]
 pub use async_io::*;
 // #[cfg(feature = "async-io")]
-// pub use sync_io::*;
+pub use sync_io::*;
 
 const U32_SIZE: usize = std::mem::size_of::<u32>();
 const U64_SIZE: usize = std::mem::size_of::<u64>();
