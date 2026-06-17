@@ -8,19 +8,11 @@ use std::{
 use futures_io::{AsyncRead, AsyncWrite};
 use pin_project_lite::pin_project;
 
-use super::{HEADER_SIZE, U64_SIZE, header::Header, roi::Roi};
+use super::{
+    HEADER_SIZE, IntoRangeResult, U64_SIZE, header::Header, read_u64, roi::Roi, unexpected_eof,
+    write_u64,
+};
 use crate::{CreateRange, ImageDimension, NonZeroRange, io::header::DataType};
-
-fn write_u64(buf: &mut [u8], val: u64) {
-    buf[..8].copy_from_slice(&val.to_le_bytes());
-}
-fn read_u64(buf: &[u8]) -> u64 {
-    u64::from_le_bytes(buf[..8].try_into().unwrap())
-}
-
-fn unexpected_eof() -> io::Error {
-    io::Error::new(io::ErrorKind::UnexpectedEof, "Unexpected Eof")
-}
 
 fn poll_write_all<W: AsyncWrite + ?Sized>(
     mut writer: Pin<&mut W>,
@@ -52,32 +44,6 @@ fn poll_read_exact<R: AsyncRead + ?Sized>(
         }
     }
     Poll::Ready(Ok(()))
-}
-
-trait IntoRangeResult {
-    type Range: CreateRange<Item: Into<u64>>;
-    fn into_range_result(self) -> io::Result<Self::Range>;
-}
-
-impl<T> IntoRangeResult for T
-where
-    T: CreateRange<Item: Into<u64>>,
-{
-    type Range = T;
-    fn into_range_result(self) -> io::Result<Self::Range> {
-        Ok(self)
-    }
-}
-
-impl<T, E> IntoRangeResult for Result<T, E>
-where
-    T: CreateRange<Item: Into<u64>>,
-    E: Into<io::Error>,
-{
-    type Range = T;
-    fn into_range_result(self) -> io::Result<Self::Range> {
-        self.map_err(Into::into)
-    }
 }
 
 enum WriterState {
@@ -659,5 +625,119 @@ mod tests {
         let mut buf = Vec::new();
         let result = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges)).await;
         assert!(matches!(result, Err(e) if e.kind() == ErrorKind::Other));
+    }
+
+    #[tokio::test]
+    async fn async_writer_stores_local_coordinates() {
+        let roi = Rect::new(
+            1u32,
+            2,
+            NonZeroU32::new(100).unwrap(),
+            NonZeroU32::new(200).unwrap(),
+        );
+        let mut buf = Vec::new();
+        AsyncRangeWriter::new(
+            &mut buf,
+            WithRoi::new(
+                futures_util::stream::iter(vec![Ok::<_, io::Error>(10u64..20u64)]),
+                roi,
+            ),
+        )
+        .await
+        .unwrap();
+
+        let range_data = &buf[HEADER_SIZE..];
+        let gap = read_u64(&range_data[..U64_SIZE]);
+        let len = read_u64(&range_data[U64_SIZE..U64_SIZE * 2]);
+        assert_eq!(gap, 10, "serialized gap must be LOCAL start, not global");
+        assert_eq!(len, 10);
+    }
+
+    #[tokio::test]
+    async fn async_serialize_sync_deserialize_with_offset() {
+        use super::super::sync_io::SyncRangeWriter;
+        use crate::SortedRanges;
+
+        let roi = Rect::new(
+            1u32,
+            2,
+            NonZeroU32::new(100).unwrap(),
+            NonZeroU32::new(200).unwrap(),
+        );
+        let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
+        let original =
+            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi)
+                .unwrap();
+
+        let async_buf = {
+            let mut buf = Vec::new();
+            AsyncRangeWriter::new(
+                &mut buf,
+                WithRoi::new(
+                    futures_util::stream::iter(
+                        local_ranges.iter().map(|r| io::Result::Ok(r.clone())),
+                    ),
+                    roi,
+                ),
+            )
+            .await
+            .unwrap();
+            buf
+        };
+
+        let from_async = SortedRanges::<u64, u64>::from_serialized(&async_buf).unwrap();
+        assert_eq!(from_async, original);
+
+        let sync_buf = {
+            let mut buf = Vec::new();
+            SyncRangeWriter::new(
+                &mut buf,
+                WithRoi::new(original.iter_roi::<NonZeroRange<u64>>(), roi),
+            )
+            .write()
+            .unwrap();
+            buf
+        };
+
+        let from_sync = SortedRanges::<u64, u64>::from_serialized(&sync_buf).unwrap();
+        assert_eq!(from_sync, original);
+    }
+
+    #[tokio::test]
+    async fn sync_serialize_async_deserialize_with_offset() {
+        use super::super::sync_io::SyncRangeWriter;
+        use crate::SortedRanges;
+
+        let roi = Rect::new(
+            1u32,
+            2,
+            NonZeroU32::new(100).unwrap(),
+            NonZeroU32::new(200).unwrap(),
+        );
+        let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
+        let original =
+            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi)
+                .unwrap();
+
+        let sync_buf = {
+            let mut buf = Vec::new();
+            SyncRangeWriter::new(
+                &mut buf,
+                WithRoi::new(
+                    local_ranges.iter().map(|r| io::Result::Ok(r.clone())),
+                    roi,
+                ),
+            )
+            .write()
+            .unwrap();
+            buf
+        };
+
+        let reader = AsyncRangeStream::new(&sync_buf[..]).await.unwrap();
+        assert_eq!(reader.bounds(), roi);
+        let reader_ranges: Vec<_> = reader.try_collect().await.unwrap();
+        let via_async =
+            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(reader_ranges, roi).unwrap();
+        assert_eq!(via_async, original);
     }
 }

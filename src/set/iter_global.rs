@@ -15,6 +15,8 @@ pub struct SortedRangesIterGlobal<I, E, T: CreateRange> {
     old_width: T::Item,
     new_width_out: T::Item,
     new_width: NonZeroU32,
+    offset_x: T::Item,
+    offset_y: T::Item,
     /// Buffered output range end for the shrinking path (`old_width >= new_width`).
     /// When non-zero, a range starting at `pending_start` is being accumulated;
     /// it is flushed when the next segment is not adjacent.
@@ -34,6 +36,8 @@ where
         old_width: NonZeroU32,
         new_width: NonZeroU32,
         new_height: NonZeroU32,
+        offset_x: T::Item,
+        offset_y: T::Item,
     ) -> Self {
         Self {
             included,
@@ -44,6 +48,8 @@ where
             new_width,
             new_height,
             new_width_out: new_width.get().cast_unchecked(),
+            offset_x,
+            offset_y,
             pending_start: T::Item::default(),
             pending_end: T::Item::default(),
         }
@@ -86,11 +92,13 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let zero = TOut::Item::default();
         if self.remaining > zero {
-            let col = self.pos % self.old_width;
-            let row = self.pos / self.old_width;
-            let take = min(self.remaining, self.old_width - col);
+            let col_local = self.pos % self.old_width;
+            let row_local = self.pos / self.old_width;
+            let take = min(self.remaining, self.old_width - col_local);
             self.pos = self.pos + take;
             self.remaining = self.remaining - take;
+            let col = self.offset_x + col_local;
+            let row = self.offset_y + row_local;
             let s = row * self.new_width_out + col;
             return Some(TOut::new_debug_checked_zeroable(s, s + take));
         }
@@ -109,8 +117,11 @@ where
             // Merge adjacent output segments at row boundaries.
             let end = self.pos + include;
             let remap = |p: TOut::Item| {
-                (p / self.old_width) * self.new_width_out
-                    + min(p % self.old_width, self.new_width_out)
+                let local_col = p % self.old_width;
+                let local_row = p / self.old_width;
+                let col = self.offset_x + local_col;
+                let row = self.offset_y + local_row;
+                row * self.new_width_out + min(col, self.new_width_out)
             };
             let (s, e) = (remap(self.pos), remap(end));
             self.pos = end;

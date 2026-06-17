@@ -325,6 +325,18 @@ where
 }
 
 impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
+    pub(crate) fn from_parts(
+        included: Vec<TIncluded>,
+        excluded: Vec<TExcluded>,
+        bounds: Rect<u32>,
+    ) -> Self {
+        Self {
+            included,
+            excluded,
+            bounds,
+        }
+    }
+
     pub fn new<TRange>(r: NonZeroRange<TRange>, bounds: Rect<u32>) -> Self
     where
         TRange: UncheckedCast<TIncluded> + UncheckedCast<TExcluded> + Sub<Output = TRange>,
@@ -550,6 +562,8 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.bounds.width,
             width,
             NonZeroU32::new(self.bounds.height.get() + self.bounds.y).unwrap(),
+            self.bounds.x.cast_unchecked(),
+            self.bounds.y.cast_unchecked(),
         )
     }
     pub fn iter_global_owned_with<T: CreateRange>(
@@ -576,6 +590,8 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.bounds.width,
             width,
             NonZeroU32::new(self.bounds.height.get() + self.bounds.y).unwrap(),
+            self.bounds.x.cast_unchecked(),
+            self.bounds.y.cast_unchecked(),
         )
     }
 }
