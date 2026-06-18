@@ -27,9 +27,6 @@ Spans (`Span { y, x }`) are always in the **global** coordinate system. `y` is
 the absolute image row, `x` is the absolute image column range. The bounds
 offset is applied so that `span.y = bounds.y + local_row`.
 
-> **Note:** `SortedRangesSpanIter` currently produces LOCAL y — this is a known
-> inconsistency documented in `span_inconsistencies.md`.
-
 ## iter_global_* — LOCAL → output frame (0,0)
 
 `iter_global_with` / `iter_global_owned_with` convert from local storage

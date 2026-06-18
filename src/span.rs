@@ -72,7 +72,7 @@ where
     }
 }
 
-impl<TParent: Iterator<Item: CreateRange>> SortedRangesSpanIter<TParent> {
+impl<TParent: Iterator<Item: CreateRange> + ImageDimension> SortedRangesSpanIter<TParent> {
     pub fn new(parent: TParent) -> Self {
         Self {
             parent,
@@ -129,7 +129,6 @@ where
             >,
         > + ImageDimension,
     u32: UncheckedCast<<TParent::Item as CreateRange>::Item>,
-    //NonZeroRange<<TParent::Item as CreateRange>::Item>: CreateRange,
 {
     type Item = Span<<TParent::Item as CreateRange>::Item>;
 
@@ -142,16 +141,23 @@ where
         let start = range.start();
         let end = range.end();
         let width = self.parent.width().get().cast_unchecked();
-        let y = start / width;
-        let row_start = y * width;
+        let local_y = start / width;
+        let row_start = local_y * width;
         let cut = row_start + width;
+        let bounds = self.parent.bounds();
+        let offset_x = bounds.x.cast_unchecked();
+        let offset_y = bounds.y.cast_unchecked();
+        let global_y = local_y + offset_y;
         let x = if let Ok(rest) = NonZeroRange::try_from(cut..end) {
             self.pending = Some(rest);
-            NonZeroRange::new_debug_checked_zeroable(start - row_start, width)
+            NonZeroRange::new_debug_checked_zeroable(start - row_start + offset_x, width + offset_x)
         } else {
-            NonZeroRange::new_debug_checked_zeroable(start - row_start, end - row_start)
+            NonZeroRange::new_debug_checked_zeroable(
+                start - row_start + offset_x,
+                end - row_start + offset_x,
+            )
         };
-        Some(Span { x, y })
+        Some(Span { x, y: global_y })
     }
 }
 
@@ -182,7 +188,7 @@ mod tests {
         assert_eq!(
             vec!(Span::new(0..10, 0), Span::new(1..10, 1)),
             span.collect::<Vec<_>>()
-        );
+        )
     }
     #[test]
     fn test_cut() {

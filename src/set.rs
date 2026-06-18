@@ -325,18 +325,6 @@ where
 }
 
 impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
-    pub(crate) fn from_parts(
-        included: Vec<TIncluded>,
-        excluded: Vec<TExcluded>,
-        bounds: Rect<u32>,
-    ) -> Self {
-        Self {
-            included,
-            excluded,
-            bounds,
-        }
-    }
-
     pub fn new<TRange>(r: NonZeroRange<TRange>, bounds: Rect<u32>) -> Self
     where
         TRange: UncheckedCast<TIncluded> + UncheckedCast<TExcluded> + Sub<Output = TRange>,
@@ -384,30 +372,54 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         TIncluded: TryFrom<u64, Error: Display>,
         TExcluded: TryFrom<u64, Error: Display>,
     {
-        let mut iter = iter.into_iter();
+        let iter = iter.into_iter();
         let bounds = iter.bounds();
         let width_u64: u64 = iter.width().get() as u64;
+        let offset_x_u64: u64 = bounds.x as u64;
+        let offset_y_u64: u64 = bounds.y as u64;
 
-        let Some(first) = iter.next() else {
+        let mut local_iter = iter.map(|span| {
+            let global_y: u64 = span.y.try_into().map_err(invalid_data)?;
+            let local_y = global_y.checked_sub(offset_y_u64).ok_or_else(|| {
+                invalid_data(format!(
+                    "span y ({global_y}) is below ROI offset y ({offset_y_u64})"
+                ))
+            })?;
+            let global_x_start: u64 = span.x.start.try_into().map_err(invalid_data)?;
+            let global_x_end: u64 = span.x.end.try_into().map_err(invalid_data)?;
+            let local_x_start = global_x_start.checked_sub(offset_x_u64).ok_or_else(|| {
+                invalid_data(format!(
+                    "span x start ({global_x_start}) is below ROI offset x ({offset_x_u64})"
+                ))
+            })?;
+            let local_x_end = global_x_end - offset_x_u64;
+
+            std::io::Result::Ok(Span::new(
+                NonZeroRange::new_debug_checked_zeroable(local_x_start, local_x_end),
+                local_y,
+            ))
+        });
+
+        let Some(first) = local_iter.next().transpose()? else {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "Requires at least one item",
             ));
         };
 
-        let y: u64 = first.y.try_into().map_err(invalid_data)?;
-        let mut merge_start: u64 =
-            y * width_u64 + first.x.start.try_into().map_err(invalid_data)?;
-        let mut merge_end: u64 = y * width_u64 + first.x.end.try_into().map_err(invalid_data)?;
+        let first_offset = first.y * width_u64;
+        let mut merge_start: u64 = first_offset + first.x.start;
+        let mut merge_end: u64 = first_offset + first.x.end;
 
         let mut excluded: Vec<TExcluded> =
             vec![TExcluded::try_from(merge_start).map_err(invalid_data)?];
-        let mut included: Vec<TIncluded> = Vec::with_capacity(iter.size_hint().0 + 1);
+        let mut included: Vec<TIncluded> = Vec::with_capacity(local_iter.size_hint().0 + 1);
 
-        for span in iter {
-            let y: u64 = span.y.try_into().map_err(invalid_data)?;
-            let start = y * width_u64 + span.x.start.try_into().map_err(invalid_data)?;
-            let end = y * width_u64 + span.x.end.try_into().map_err(invalid_data)?;
+        for span in local_iter {
+            let span = span?;
+            let span_offset = span.y * width_u64;
+            let start = span_offset + span.x.start;
+            let end = span_offset + span.x.end;
 
             if start == merge_end {
                 merge_end = end;
@@ -484,8 +496,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.included.iter().copied(),
             self.excluded.iter().copied(),
             T::Item::default(),
-            self.bounds.width,
-            self.bounds.height,
+            self.bounds,
         )
     }
     pub fn iter_roi_owned<T: CreateRange>(
@@ -500,8 +511,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.included.into_iter(),
             self.excluded.into_iter(),
             T::Item::default(),
-            self.bounds.width,
-            self.bounds.height,
+            self.bounds,
         )
     }
     pub fn spans<T>(
@@ -922,6 +932,74 @@ mod tests {
         assert_eq!(bounds_with_offset, ImageDimension::bounds(&reconstructed));
         assert_eq!(spans, reconstructed.spans().collect::<Vec<_>>());
         Ok(())
+    }
+
+    #[test]
+    fn span_roundtrip_with_offset_produces_global_spans() {
+        let roi = Rect::new(
+            1u32,
+            2,
+            NonZero::new(200).unwrap(),
+            NonZero::new(100).unwrap(),
+        );
+
+        let global_spans = vec![
+            Span::new(1u32..11, 2u32),
+            Span::new(1u32..11, 3u32),
+            Span::new(1u32..11, 4u32),
+        ];
+
+        let sorted =
+            SortedRanges::<u32, u32>::try_from_span_iter(global_spans.clone().with_roi(roi))
+                .unwrap();
+
+        assert_eq!(ImageDimension::bounds(&sorted), roi);
+
+        let result_spans: Vec<Span<u32>> = sorted.spans().collect();
+        assert_eq!(result_spans, global_spans);
+
+        let local_ranges: Vec<Range<u64>> = sorted.iter_roi().collect();
+        assert_eq!(
+            local_ranges,
+            vec![0u64..10, 200..210, 400..410],
+            "iter_roi must produce LOCAL ranges (row 0, 1, 2 of the ROI), \
+             not positions computed from global span y values"
+        );
+    }
+
+    #[test]
+    fn iter_roi_is_local_but_spans_are_global_with_offset() {
+        let roi = Rect::new(
+            5u32,
+            7,
+            NonZero::new(50).unwrap(),
+            NonZero::new(30).unwrap(),
+        );
+        let sorted = SortedRanges::<u32, u32>::try_from_ordered_iter_roi(
+            vec![0u64..10, 60..70].with_roi(Rect {
+                x: 0,
+                y: 0,
+                width: roi.width,
+                height: roi.height,
+            }),
+            roi,
+        )
+        .unwrap();
+
+        let iter = sorted.iter_roi::<Range<u64>>();
+        assert_eq!(
+            ImageDimension::bounds(&iter),
+            Rect::new(5, 7, roi.width, roi.height),
+            "iter_roi is a LOCAL iterator — its ImageDimension must report offset 0"
+        );
+
+        let span_iter = sorted.spans::<u32>();
+        assert_eq!(
+            ImageDimension::bounds(&span_iter),
+            roi,
+            "spans() produces GLOBAL spans — its ImageDimension must report the ROI offset, {:?}",
+            span_iter.clone().collect::<Vec<_>>()
+        );
     }
 
     #[test]

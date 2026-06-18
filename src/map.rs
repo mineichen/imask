@@ -196,8 +196,7 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
             self.included.iter().copied(),
             self.excluded.iter().copied(),
             T::Item::default(),
-            self.bounds.width,
-            self.bounds.height,
+            self.bounds,
         )
     }
     pub fn ranges_owned<T: CreateRange>(self) -> SortedRangesVecIter<TIncluded, TExcluded, T>
@@ -210,8 +209,7 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
             self.included.into_iter(),
             self.excluded.into_iter(),
             T::Item::default(),
-            self.bounds.width,
-            self.bounds.height,
+            self.bounds,
         )
     }
 
