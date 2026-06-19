@@ -444,6 +444,18 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         })
     }
 
+    #[cfg(feature = "async-io")]
+    pub(crate) fn from_parts(
+        included: Vec<TIncluded>,
+        excluded: Vec<TExcluded>,
+        bounds: Rect<u32>,
+    ) -> Self {
+        Self {
+            bounds,
+            excluded,
+            included,
+        }
+    }
     fn try_from_ordered_iter_roi_internal<TIter>(
         iter: TIter,
     ) -> Result<Builder<TIncluded, TExcluded>, io::Error>
