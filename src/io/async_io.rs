@@ -666,8 +666,7 @@ mod tests {
         );
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let original =
-            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi)
-                .unwrap();
+            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi).unwrap();
 
         let async_buf = {
             let mut buf = Vec::new();
@@ -716,17 +715,13 @@ mod tests {
         );
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let original =
-            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi)
-                .unwrap();
+            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi).unwrap();
 
         let sync_buf = {
             let mut buf = Vec::new();
             SyncRangeWriter::new(
                 &mut buf,
-                WithRoi::new(
-                    local_ranges.iter().map(|r| io::Result::Ok(r.clone())),
-                    roi,
-                ),
+                WithRoi::new(local_ranges.iter().map(|r| io::Result::Ok(r.clone())), roi),
             )
             .write()
             .unwrap();
