@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::marker::PhantomData;
 use std::num::NonZero;
 
 use nalgebra::{Matrix3, Vector3};
@@ -271,15 +270,17 @@ impl Ord for HeapEntry {
     }
 }
 
-pub struct AffineTransformHeap<I> {
+pub struct AffineTransformHeap {
     heap: BinaryHeap<HeapEntry>,
     bounds: Rect<u32>,
     pending: Option<Span<u32>>,
-    _phantom: PhantomData<I>,
 }
 
-impl<I: Iterator<Item = Span<u32>> + ImageDimension> AffineTransformHeap<I> {
-    pub fn new(spans: I, matrix: &Matrix3<f64>) -> Option<Self> {
+impl AffineTransformHeap {
+    pub fn new<I: Iterator<Item = Span<u32>> + ImageDimension>(
+        spans: I,
+        matrix: &Matrix3<f64>,
+    ) -> Option<Self> {
         let parent_bounds = spans.bounds();
         let bounds = transform_bounds_rect(parent_bounds, matrix)?;
 
@@ -300,7 +301,6 @@ impl<I: Iterator<Item = Span<u32>> + ImageDimension> AffineTransformHeap<I> {
             heap: BinaryHeap::from(entries),
             bounds,
             pending: None,
-            _phantom: PhantomData,
         })
     }
 
@@ -319,7 +319,7 @@ impl<I: Iterator<Item = Span<u32>> + ImageDimension> AffineTransformHeap<I> {
     }
 }
 
-impl<I: Iterator<Item = Span<u32>> + ImageDimension> ImageDimension for AffineTransformHeap<I> {
+impl ImageDimension for AffineTransformHeap {
     fn bounds(&self) -> Rect<u32> {
         self.bounds
     }
@@ -329,7 +329,7 @@ impl<I: Iterator<Item = Span<u32>> + ImageDimension> ImageDimension for AffineTr
     }
 }
 
-impl<I: Iterator<Item = Span<u32>> + ImageDimension> Iterator for AffineTransformHeap<I> {
+impl Iterator for AffineTransformHeap {
     type Item = Span<u32>;
 
     fn next(&mut self) -> Option<Span<u32>> {
