@@ -27,6 +27,7 @@ mod iter;
 mod iter_global;
 mod map_inplace;
 mod offsets_iter;
+mod span_offsets_iter;
 mod rect;
 mod sanitize_sorted_disjoint;
 // mod split_rows;
@@ -40,6 +41,7 @@ pub use iter_global::*;
 pub use map_inplace::*;
 pub use offsets_iter::*;
 pub use rect::*;
+pub use span_offsets_iter::*;
 pub use sanitize_sorted_disjoint::*;
 // pub use split_rows::*;
 
