@@ -204,14 +204,14 @@ impl<I: IntoIterator> ImaskSet for I {}
 /// Meta is expected to be indexable for each included range
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive))]
-pub struct SortedRanges<TIncluded, TExcluded> {
+pub struct SortedRanges<TIncluded, TExcluded = TIncluded> {
     included: Vec<TIncluded>,
     excluded: Vec<TExcluded>,
     bounds: Rect<u32>,
 }
 impl<TIncluded, TExcluded> Debug for SortedRanges<TIncluded, TExcluded> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NonEmptyOrderedRanges")
+        f.debug_struct("SortedRanges")
             .field("range_count", &self.included.len())
             .field("bounds", &self.bounds)
             .finish()
