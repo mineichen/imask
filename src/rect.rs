@@ -3,7 +3,7 @@ use std::{
     ops::{Add, Sub},
 };
 
-use crate::{CreateRange, NonZeroRange, RectIterator, SignedNonZeroable};
+use crate::{CreateRange, NonZeroRange, RectIterator, SignedNonZeroable, UncheckedCast};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive))]
@@ -37,6 +37,34 @@ impl<T: SignedNonZeroable> Rect<T> {
             height,
         }
     }
+
+    pub fn cast_unchecked<TNew: SignedNonZeroable>(self) -> Rect<TNew>
+    where
+        T: UncheckedCast<TNew>,
+    {
+        let x = self.x.cast_unchecked();
+        let y = self.y.cast_unchecked();
+
+        let width = self
+            .width
+            .into()
+            .cast_unchecked()
+            .create_non_zero()
+            .expect("Still NonZero after cast");
+        let height = self
+            .height
+            .into()
+            .cast_unchecked()
+            .create_non_zero()
+            .expect("Still NonZero after cast");
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
     pub fn len_y(&self) -> T::NonZero
     where
         T: Add<Output = T> + Copy,

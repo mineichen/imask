@@ -27,9 +27,9 @@ mod iter;
 mod iter_global;
 mod map_inplace;
 mod offsets_iter;
-mod span_offsets_iter;
 mod rect;
 mod sanitize_sorted_disjoint;
+mod span_offsets_iter;
 // mod split_rows;
 
 pub use bounds_inspector::*;
@@ -41,8 +41,8 @@ pub use iter_global::*;
 pub use map_inplace::*;
 pub use offsets_iter::*;
 pub use rect::*;
-pub use span_offsets_iter::*;
 pub use sanitize_sorted_disjoint::*;
+pub use span_offsets_iter::*;
 // pub use split_rows::*;
 
 pub(crate) type SortedRangesSliceIter<'a, TIncluded, TExcluded, T> = SortedRangesIter<
@@ -326,7 +326,25 @@ where
     T::try_from(end - start).map_err(invalid_data)
 }
 
+impl<T: SignedNonZeroable + UncheckedCast<u32> + Sub<Output = T>> From<Span<T>>
+    for SortedRanges<T, T>
+where
+    Rect<T>: From<Span<T>>,
+{
+    fn from(span: Span<T>) -> Self {
+        let bounds = Rect::<T>::from(span).cast_unchecked::<u32>();
+        // Avoid additional bound on num_traits::Zero
+        let zero = span.x.start - span.x.start;
+        Self {
+            included: vec![span.x.len()],
+            excluded: vec![zero],
+            bounds,
+        }
+    }
+}
+
 impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
+    #[deprecated = "Use from_span instead, which automatically sets the correct bounds"]
     pub fn new<TRange>(r: NonZeroRange<TRange>, bounds: Rect<u32>) -> Self
     where
         TRange: UncheckedCast<TIncluded> + UncheckedCast<TExcluded> + Sub<Output = TRange>,
@@ -666,6 +684,17 @@ mod tests {
             spans
         );
         Ok(())
+    }
+
+    #[test]
+    fn ranges_from_span_roundtrip() {
+        let x = NonZeroRange::from_span(15u32, NonZero::new(10).unwrap());
+        let span = Span { y: 10u32, x };
+        let r = SortedRanges::from(span);
+        let mut spans = r.spans::<u32>();
+        let first = spans.next().expect("Has one");
+        assert_eq!(None, spans.next(), "First {first:?}");
+        assert_eq!(span, first);
     }
 
     #[cfg(feature = "range-set-blaze-0_5")]

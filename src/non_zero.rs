@@ -312,7 +312,8 @@ where
     where
         T: SignedNonZeroable,
     {
-        // We don't check every numeric operation, so len could be zero, but this is UB already
+        // We don't check every numeric operation for performance reasons, so len could be zero.
+        // If a overflow happened, this is a bug already and we therefore panic here
         T::create_non_zero(self.end - self.start).expect("A operation probably overflowed")
     }
 }

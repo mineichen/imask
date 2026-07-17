@@ -3,7 +3,7 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, UncheckedCast};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, UncheckedCast};
 
 mod affine_transform;
 mod clip;
@@ -25,6 +25,7 @@ pub use from_bitmap::*;
 pub use from_bitmap_range::*;
 pub use intersect::*;
 pub use into_ranges::*;
+use num_traits::One;
 pub use rect::*;
 pub use subtract::*;
 pub use union::*;
@@ -42,6 +43,21 @@ pub trait IntoSpanIter<T> {
 pub struct Span<T> {
     pub y: T,
     pub x: NonZeroRange<T>,
+}
+
+impl<T: SignedNonZeroable + Copy + Sub<Output = T>> From<Span<T>> for Rect<T>
+where
+    // T::NonZero: One doesn't work, as NonZero<T> doesn't implement One
+    T: One,
+{
+    fn from(value: Span<T>) -> Self {
+        Rect {
+            x: value.x.start,
+            y: value.y,
+            width: value.x.len_non_zero(),
+            height: T::one().create_non_zero().expect("One is not zero"),
+        }
+    }
 }
 
 impl<T: Debug + Ord + Copy> Span<T> {
@@ -198,5 +214,13 @@ mod tests {
             vec!(Span::new(0..10, 0), Span::new(0..10, 1)),
             span.collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn rect_from_span_roundtrip() {
+        let x = Span::new(10u32..20, 2);
+        let rect = Rect::from(x);
+        let spans = rect.into_spans().collect::<Vec<_>>();
+        assert_eq!(vec![x], spans);
     }
 }
