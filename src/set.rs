@@ -394,6 +394,11 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     {
         let iter = iter.into_iter();
         let bounds = iter.bounds();
+        debug_assert_eq!(
+            iter.width(),
+            bounds.width,
+            "width() must equal bounds().width"
+        );
         let width_u64: u64 = iter.width().get() as u64;
         let offset_x_u64: u64 = bounds.x as u64;
         let offset_y_u64: u64 = bounds.y as u64;

@@ -13,11 +13,35 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
     for Subtract<TA, TB>
 {
     fn bounds(&self) -> Rect<u32> {
-        self.a.parent.bounds()
+        let a_bounds = self.a.parent.bounds();
+        let b_bounds = self.b.parent.bounds();
+        debug_assert_eq!(
+            a_bounds.width,
+            self.a.parent.width(),
+            "Subtract parent A width must equal its bounds().width"
+        );
+        debug_assert_eq!(
+            b_bounds.width,
+            self.b.parent.width(),
+            "Subtract parent B width must equal its bounds().width"
+        );
+        a_bounds
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.a.parent.width()
+        let a_w = self.a.parent.width();
+        let b_w = self.b.parent.width();
+        debug_assert_eq!(
+            a_w,
+            self.a.parent.bounds().width,
+            "Subtract parent A width must equal its bounds().width"
+        );
+        debug_assert_eq!(
+            b_w,
+            self.b.parent.bounds().width,
+            "Subtract parent B width must equal its bounds().width"
+        );
+        a_w
     }
 }
 

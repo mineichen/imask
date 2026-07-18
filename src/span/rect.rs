@@ -35,8 +35,8 @@ impl<T: UncheckedCast<u32>> ImageDimension for RectSpanIter<T> {
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        NonZeroU32::new(self.span.x.end.cast_unchecked())
-            .expect("End must be > start, so it cannot be 0")
+        NonZeroU32::new(self.span.x.end.cast_unchecked() - self.span.x.start.cast_unchecked())
+            .expect("X mustn't be zero length")
     }
 }
 

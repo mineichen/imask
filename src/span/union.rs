@@ -12,11 +12,35 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
     for Union<TA, TB>
 {
     fn bounds(&self) -> Rect<u32> {
-        self.a.parent.bounds().bounds(&self.b.parent.bounds())
+        let a_bounds = self.a.parent.bounds();
+        let b_bounds = self.b.parent.bounds();
+        debug_assert_eq!(
+            a_bounds.width,
+            self.a.parent.width(),
+            "Union parent A width must equal its bounds().width"
+        );
+        debug_assert_eq!(
+            b_bounds.width,
+            self.b.parent.width(),
+            "Union parent B width must equal its bounds().width"
+        );
+        a_bounds.bounds(&b_bounds)
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.a.parent.width().max(self.b.parent.width())
+        let a_w = self.a.parent.width();
+        let b_w = self.b.parent.width();
+        debug_assert_eq!(
+            a_w,
+            self.a.parent.bounds().width,
+            "Union parent A width must equal its bounds().width"
+        );
+        debug_assert_eq!(
+            b_w,
+            self.b.parent.bounds().width,
+            "Union parent B width must equal its bounds().width"
+        );
+        a_w.max(b_w)
     }
 }
 
