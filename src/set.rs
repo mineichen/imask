@@ -706,7 +706,11 @@ mod tests {
 
         let b_iter = b.iter_roi::<RangeInclusive<u64>>();
         let a = a
-            .map_inplace(|a_iter| range_set_blaze_0_5::SortedDisjoint::union(b_iter, a_iter))
+            .map_inplace(|a_iter| {
+                let bounds = a_iter.bounds();
+                range_set_blaze_0_5::SortedDisjoint::union(b_iter, a_iter)
+                    .with_roi(bounds)
+            })
             .unwrap();
 
         assert_eq!(

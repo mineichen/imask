@@ -272,7 +272,7 @@ mod tests {
     use testresult::TestResult;
 
     use crate::io::PROTOCOL_VERSION;
-    use crate::{Rect, WithRoi};
+    use crate::{ImaskSet, Rect, WithRoi};
 
     use super::*;
 
@@ -653,7 +653,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn async_serialize_sync_deserialize_with_offset() {
+    async fn async_serialize_sync_deserialize_with_offset() -> TestResult {
         use super::super::sync_io::SyncRangeWriter;
         use crate::SortedRanges;
 
@@ -664,8 +664,8 @@ mod tests {
             NonZeroU32::new(200).unwrap(),
         );
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
-        let original =
-            SortedRanges::<u64, u64>::try_from_ordered_iter(local_ranges.clone().with_roi(roi)).unwrap();
+        let local_ranges_roi = local_ranges.clone().with_roi(roi);
+        let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi)?;
 
         let async_buf = {
             let mut buf = Vec::new();
@@ -699,10 +699,11 @@ mod tests {
 
         let from_sync = SortedRanges::<u64, u64>::from_serialized(&sync_buf).unwrap();
         assert_eq!(from_sync, original);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn sync_serialize_async_deserialize_with_offset() {
+    async fn sync_serialize_async_deserialize_with_offset() -> TestResult {
         use super::super::sync_io::SyncRangeWriter;
         use crate::SortedRanges;
 
@@ -713,8 +714,8 @@ mod tests {
             NonZeroU32::new(200).unwrap(),
         );
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
-        let original =
-            SortedRanges::<u64, u64>::try_from_ordered_iter(local_ranges.clone().with_roi(roi)).unwrap();
+        let local_ranges_roi = local_ranges.clone().with_roi(roi);
+        let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi)?;
 
         let sync_buf = {
             let mut buf = Vec::new();
@@ -730,8 +731,9 @@ mod tests {
         let reader = AsyncRangeStream::new(&sync_buf[..]).await.unwrap();
         assert_eq!(reader.bounds(), roi);
         let reader_ranges: Vec<_> = reader.try_collect().await.unwrap();
-        let via_async =
-            SortedRanges::<u64, u64>::try_from_ordered_iter(reader_ranges.with_roi(roi)).unwrap();
+        let via_async = SortedRanges::<u64>::try_from_ordered_iter(reader_ranges.with_roi(roi))?;
+
         assert_eq!(via_async, original);
+        Ok(())
     }
 }
