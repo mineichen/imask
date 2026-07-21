@@ -9,39 +9,13 @@ pub struct Subtract<TA: Iterator, TB: Iterator> {
     b: Peekable<TB>,
 }
 
-impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimension
-    for Subtract<TA, TB>
-{
+impl<TA: Iterator + ImageDimension, TB: Iterator> ImageDimension for Subtract<TA, TB> {
     fn bounds(&self) -> Rect<u32> {
-        let a_bounds = self.a.parent.bounds();
-        let b_bounds = self.b.parent.bounds();
-        debug_assert_eq!(
-            a_bounds.width,
-            self.a.parent.width(),
-            "Subtract parent A width must equal its bounds().width"
-        );
-        debug_assert_eq!(
-            b_bounds.width,
-            self.b.parent.width(),
-            "Subtract parent B width must equal its bounds().width"
-        );
-        a_bounds
+        self.a.parent.bounds()
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        let a_w = self.a.parent.width();
-        let b_w = self.b.parent.width();
-        debug_assert_eq!(
-            a_w,
-            self.a.parent.bounds().width,
-            "Subtract parent A width must equal its bounds().width"
-        );
-        debug_assert_eq!(
-            b_w,
-            self.b.parent.bounds().width,
-            "Subtract parent B width must equal its bounds().width"
-        );
-        a_w
+        self.a.parent.width()
     }
 }
 
@@ -137,7 +111,15 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ImaskSet;
+    use crate::{ImaskSet, SortedRanges};
+
+    #[test]
+    fn subtract_has_correct_bounds() {
+        let a = SortedRanges::from(Span::new(10u32..20, 2));
+        let b = SortedRanges::from(Span::new(10u32..20, 3));
+        let sub = a.spans::<u8>().subtract(b.spans::<u8>());
+        assert_eq!(a.bounds(), sub.bounds());
+    }
 
     #[test]
     fn no_overlap_different_lines() {
