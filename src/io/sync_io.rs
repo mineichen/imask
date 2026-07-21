@@ -473,7 +473,7 @@ mod tests {
         use crate::SortedRanges;
 
         let bounds = Rect::new(0u32, 0, NONZERO_1000, NONZERO_1000);
-        let sorted = SortedRanges::<u64, u64>::try_from_ordered_iter(
+        let sorted = SortedRanges::<u64>::try_from_ordered_iter(
             [10u64..20, 30..40, 1050..1060].with_roi(bounds),
         )
         .unwrap();
@@ -524,17 +524,16 @@ mod tests {
         let roi = Rect::new(offset_x, offset_y, width, height);
 
         let local_ranges: Vec<Range<u64>> = vec![10u64..30, 45..50, 205..210];
-        let original = crate::SortedRanges::<u64, u64>::try_from_ordered_iter(
-            local_ranges.clone().with_roi(roi),
-        )
-        .unwrap();
+        let original =
+            crate::SortedRanges::<u64>::try_from_ordered_iter(local_ranges.clone().with_roi(roi))
+                .unwrap();
 
         let mut buf = Vec::new();
         SyncRangeWriter::new(&mut buf, original.iter_roi::<Range<u64>>().with_roi(roi))
             .write()
             .unwrap();
 
-        let from_serialized = crate::SortedRanges::<u64, u64>::from_serialized(&buf).unwrap();
+        let from_serialized = crate::SortedRanges::<u64>::from_serialized(&buf).unwrap();
         assert_eq!(from_serialized, original);
     }
 

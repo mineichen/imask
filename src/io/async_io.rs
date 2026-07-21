@@ -581,7 +581,7 @@ mod tests {
         use crate::{Rect, SortedRanges};
 
         let bounds = Rect::new(0u32, 0, NONZERO_1000, NONZERO_1000);
-        let sorted = SortedRanges::<u64, u64>::try_from_ordered_iter(
+        let sorted = SortedRanges::<u64>::try_from_ordered_iter(
             [10u64..20, 30..40, 1050..1060].with_roi(bounds),
         )
         .unwrap();
@@ -683,7 +683,7 @@ mod tests {
             buf
         };
 
-        let from_async = SortedRanges::<u64, u64>::from_serialized(&async_buf).unwrap();
+        let from_async = SortedRanges::<u64>::from_serialized(&async_buf).unwrap();
         assert_eq!(from_async, original);
 
         let sync_buf = {
@@ -697,7 +697,7 @@ mod tests {
             buf
         };
 
-        let from_sync = SortedRanges::<u64, u64>::from_serialized(&sync_buf).unwrap();
+        let from_sync = SortedRanges::<u64>::from_serialized(&sync_buf).unwrap();
         assert_eq!(from_sync, original);
         Ok(())
     }

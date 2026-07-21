@@ -7,7 +7,7 @@ The Iterator-Combinators don't consider the offset and may inherit the ImageWidt
 
 # Error Philosophy
 
-When a Iterator is used, the values are expected to successfuly cast to the value of the accumulator. We expect `SortedRanges::<u16, u16>::iter::<u32>()` not to overflow -> This is checked for debug builds, but not if `cfg!(not(debug_assertions))`, as it causes significant slowdown otherwise. You can therefore not rely on ranges not to be empty in unsafe code. This library continues processing if this ever happens, but might add some lightweight assertions in release-mode (e.g. check, if accumulator is > biggest single element).
+When a Iterator is used, the values are expected to successfuly cast to the value of the accumulator. We expect `SortedRanges::<u16>::iter::<u32>()` not to overflow -> This is checked for debug builds, but not if `cfg!(not(debug_assertions))`, as it causes significant slowdown otherwise. You can therefore not rely on ranges not to be empty in unsafe code. This library continues processing if this ever happens, but might add some lightweight assertions in release-mode (e.g. check, if accumulator is > biggest single element).
 When comeing from the unchecked places, error-detection is usually provided by returning a Result or having a method `into_result` for cases where error detection can only happen if the `Iterator` was consumed. Iterators stop after a error occurs. If into_result is not called, it causes the iterator to panic if debug_assertions are enabled.
 
 `core::ops::RangeInclusive` and `core::ops::Range` are both expected to have `start < end` in most scenarios, except when loading them from a unchecked iterator.

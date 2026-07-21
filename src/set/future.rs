@@ -100,13 +100,13 @@ mod tests {
     #[tokio::test]
     async fn try_from_stream() -> TestResult {
         let ranges_array = [0u16..10, 16..2020];
-        let stream_ranges = SortedRanges::<u64, u64>::try_from_ordered_stream(WithBounds::new(
+        let stream_ranges = SortedRanges::<u64>::try_from_ordered_stream(WithBounds::new(
             futures_util::stream::iter(ranges_array.iter().map(|x| Ok(x.clone()))),
             NON_ZERO_1000,
             NON_ZERO_1000,
         ))
         .await?;
-        let iter_ranges = SortedRanges::<u64, u64>::try_from_ordered_iter(
+        let iter_ranges = SortedRanges::<u64>::try_from_ordered_iter(
             ranges_array.with_bounds(NON_ZERO_1000, NON_ZERO_1000),
         )?;
         assert_eq!(stream_ranges, iter_ranges);

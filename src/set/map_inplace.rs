@@ -20,7 +20,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let size = const { NonZero::new(1000u32).unwrap() };
     /// let source = [10u32..20, 30..45, 50..60].with_bounds(size, size);
-    /// let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(source)?;
+    /// let ranges = SortedRanges::<u16>::try_from_ordered_iter(source)?;
     /// let ranges = ranges.map_inplace(|iter| {
     ///     let roi = iter.bounds();
     ///     iter.map(|x| {
@@ -128,7 +128,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     ///     Span::new(NonZeroRange::try_from(0..100)?, 0u64),
     ///     Span::new(NonZeroRange::try_from(50..100)?, 1u64),
     /// ].with_bounds(width, height);
-    /// let ranges = SortedRanges::<u32, u32>::try_from_span_iter(spans)?;
+    /// let ranges = SortedRanges::<u32>::try_from_span_iter(spans)?;
     ///
     /// let result = ranges.map_span_inplace(|source| {
     ///     let extra = SortedRanges::from(Span::new(0..50, 1u64)).spans_owned();
@@ -289,7 +289,7 @@ mod tests {
             Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
         ]
         .with_bounds(width, height);
-        let ranges = SortedRanges::<u32, u32>::try_from_span_iter(spans).unwrap();
+        let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
 
         let result = ranges
             .map_span_inplace(|source| {
@@ -327,8 +327,7 @@ mod tests {
         ];
 
         let ranges =
-            SortedRanges::<u32, u32>::try_from_span_iter(global_spans.clone().with_roi(roi))
-                .unwrap();
+            SortedRanges::<u32>::try_from_span_iter(global_spans.clone().with_roi(roi)).unwrap();
 
         assert_eq!(roi, ranges.bounds());
 
@@ -369,7 +368,7 @@ mod tests {
             Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
         ]
         .with_bounds(width, height);
-        let ranges = SortedRanges::<u32, u32>::try_from_span_iter(spans).unwrap();
+        let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
 
         // Remove half of the second row
         let result = ranges
@@ -399,7 +398,7 @@ mod tests {
             Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
         ]
         .with_bounds(width, height);
-        let ranges = SortedRanges::<u32, u32>::try_from_span_iter(spans).unwrap();
+        let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
         let original = ranges.spans::<u64>().collect::<Vec<_>>();
 
         // Pass through identity — rows must be preserved
@@ -467,7 +466,7 @@ mod tests {
             Span::new(NonZeroRange::try_from(0..100).unwrap(), 2u64),
         ]
         .with_bounds(width, height);
-        let ranges = SortedRanges::<u32, u32>::try_from_span_iter(spans).unwrap();
+        let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
 
         // Subtract middle portion of middle row — rows 0 and 2 must stay separate
         let result = ranges

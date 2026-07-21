@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn get_spans() -> TestResult {
-        let input = SortedRanges::<u32, u32>::try_from_ordered_iter(
+        let input = SortedRanges::<u32>::try_from_ordered_iter(
             [0..1000u32, 1001..2000].with_roi(TEST_BOUNDS),
         )?;
         let spans = input.spans_owned::<u32>().collect::<Vec<_>>();
@@ -708,8 +708,7 @@ mod tests {
         let a = a
             .map_inplace(|a_iter| {
                 let bounds = a_iter.bounds();
-                range_set_blaze_0_5::SortedDisjoint::union(b_iter, a_iter)
-                    .with_roi(bounds)
+                range_set_blaze_0_5::SortedDisjoint::union(b_iter, a_iter).with_roi(bounds)
             })
             .unwrap();
 
@@ -725,9 +724,8 @@ mod tests {
 
     #[test]
     fn ranges_starting_at_zero() {
-        let map = SortedRanges::<u32, u32>::try_from_ordered_iter(
-            [0u64..1, 5u64..6].with_roi(TEST_BOUNDS),
-        );
+        let map =
+            SortedRanges::<u32>::try_from_ordered_iter([0u64..1, 5u64..6].with_roi(TEST_BOUNDS));
 
         let map = map.unwrap();
         let collected: Vec<_> = map.iter_roi::<std::ops::Range<u64>>().collect();
@@ -853,7 +851,7 @@ mod tests {
     fn iter_global_with_different_widths() {
         let rect = Rect::new(2u32, 1, NonZero::new(4).unwrap(), NonZero::new(3).unwrap());
         let global_width = NonZero::new(10u32).unwrap();
-        let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(
+        let ranges = SortedRanges::<u16>::try_from_ordered_iter(
             rect.into_rect_iter::<std::ops::Range<u32>>(global_width),
         )
         .unwrap();
@@ -879,7 +877,7 @@ mod tests {
     fn iter_global_with_different_widths_full_rect_width() {
         let rect = Rect::new(0u32, 1, NonZero::new(10).unwrap(), NonZero::new(3).unwrap());
         let global_width = NonZero::new(10u32).unwrap();
-        let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(
+        let ranges = SortedRanges::<u16>::try_from_ordered_iter(
             rect.into_rect_iter::<std::ops::Range<u32>>(global_width),
         )
         .unwrap();
@@ -906,7 +904,7 @@ mod tests {
     #[test]
     fn iter_global_with_multiple_in_same_line() {
         const SIZE: NonZero<u32> = NonZero::new(20).unwrap();
-        let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(
+        let ranges = SortedRanges::<u16>::try_from_ordered_iter(
             [0u32..1, 3..4, 8..11, 13..14, 19..21].with_bounds(SIZE, SIZE),
         )
         .unwrap();
@@ -929,7 +927,7 @@ mod tests {
             .unwrap()
             .collect::<Vec<_>>();
         assert_eq!(1, ranges.len());
-        let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(
+        let ranges = SortedRanges::<u16>::try_from_ordered_iter(
             ranges.with_bounds(RECT_SIZE, RECT_SIZE).with_roi(rect),
         )
         .unwrap();
@@ -941,12 +939,12 @@ mod tests {
 
     #[test]
     fn try_from_span_iter_roundtrip() -> TestResult {
-        let original = SortedRanges::<u32, u32>::try_from_ordered_iter(
+        let original = SortedRanges::<u32>::try_from_ordered_iter(
             [0u32..1000, 1001..2000].with_roi(TEST_BOUNDS),
         )?;
         let spans: Vec<_> = original.spans::<u32>().collect();
 
-        let reconstructed = SortedRanges::<u32, u32>::try_from_span_iter(
+        let reconstructed = SortedRanges::<u32>::try_from_span_iter(
             spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
         )?;
 
@@ -960,7 +958,7 @@ mod tests {
     #[test]
     fn try_from_span_iter_empty_returns_error() {
         let spans: Vec<Span<u32>> = vec![];
-        let result = SortedRanges::<u32, u32>::try_from_span_iter(
+        let result = SortedRanges::<u32>::try_from_span_iter(
             spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
         );
         assert!(result.is_err());
@@ -970,7 +968,7 @@ mod tests {
     #[test]
     fn try_from_span_iter_overlapping_returns_error() {
         let spans = vec![Span::new(0u32..500, 0u32), Span::new(0u32..500, 0u32)];
-        let result = SortedRanges::<u64, u64>::try_from_span_iter(
+        let result = SortedRanges::<u64>::try_from_span_iter(
             spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
         );
         assert!(result.is_err());
@@ -987,9 +985,8 @@ mod tests {
         );
         let spans = vec![Span::new(1u32..2, 1u32), Span::new(1u32..2, 2u32)];
 
-        let reconstructed = SortedRanges::<u32, u32>::try_from_span_iter(
-            spans.clone().with_roi(bounds_with_offset),
-        )?;
+        let reconstructed =
+            SortedRanges::<u32>::try_from_span_iter(spans.clone().with_roi(bounds_with_offset))?;
 
         assert_eq!(bounds_with_offset, ImageDimension::bounds(&reconstructed));
         assert_eq!(spans, reconstructed.spans().collect::<Vec<_>>());
@@ -1012,8 +1009,7 @@ mod tests {
         ];
 
         let sorted =
-            SortedRanges::<u32, u32>::try_from_span_iter(global_spans.clone().with_roi(roi))
-                .unwrap();
+            SortedRanges::<u32>::try_from_span_iter(global_spans.clone().with_roi(roi)).unwrap();
 
         assert_eq!(ImageDimension::bounds(&sorted), roi);
 
@@ -1038,7 +1034,7 @@ mod tests {
             NonZero::new(30).unwrap(),
         );
         let sorted =
-            SortedRanges::<u32, u32>::try_from_ordered_iter(vec![0u64..10, 60..70].with_roi(roi))
+            SortedRanges::<u32>::try_from_ordered_iter(vec![0u64..10, 60..70].with_roi(roi))
                 .unwrap();
 
         let iter = sorted.iter_roi::<Range<u64>>();
@@ -1066,8 +1062,7 @@ mod tests {
             Span::new(0u16..u16::MAX, 1u16),
         ];
 
-        let result =
-            SortedRanges::<u64, u64>::try_from_span_iter(spans.with_bounds(WIDTH, HEIGHT))?;
+        let result = SortedRanges::<u64>::try_from_span_iter(spans.with_bounds(WIDTH, HEIGHT))?;
 
         let ranges: Vec<Range<u64>> = result.iter_roi().collect();
         assert_eq!(vec![0u64..131070], ranges);
