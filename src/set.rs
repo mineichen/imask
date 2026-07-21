@@ -2,7 +2,7 @@ use std::{
     cmp::Ord,
     fmt::{Debug, Display},
     io,
-    num::{NonZero, NonZeroU32, NonZeroU64},
+    num::{NonZero, NonZeroU32},
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -301,23 +301,6 @@ where
             bounds,
         }
     }
-
-    fn build_global(self, width: NonZeroU32) -> io::Result<SortedRanges<TIncluded, TExcluded>> {
-        let height = u32::try_from(self.cur_pos / NonZeroU64::from(width) + 1)
-            .ok()
-            .and_then(NonZero::new)
-            .ok_or_else(|| io::Error::other("Height is > u32"))?;
-        Ok(SortedRanges {
-            included: self.included,
-            excluded: self.excluded,
-            bounds: Rect {
-                x: 0,
-                y: 0,
-                width,
-                height,
-            },
-        })
-    }
 }
 fn create_checked<T>(start: u64, end: u64) -> Result<T, io::Error>
 where
@@ -376,10 +359,11 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         TExcluded: TryFrom<u64, Error: Display>,
     {
         let iter = iter.into_iter();
-        let width = iter.width();
-        Self::try_from_ordered_iter_roi_internal(iter).and_then(|x| x.build_global(width))
+        let bounds = iter.bounds();
+        Self::try_from_ordered_iter_roi_internal(iter).map(|r| r.build(bounds))
     }
 
+    #[deprecated = "Use `try_from_ordered_iter(input.with_roi(bounds))` instead"]
     pub fn try_from_ordered_iter_roi<TIter>(
         iter: TIter,
         bounds: Rect<u32>,
@@ -389,7 +373,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         TIncluded: TryFrom<u64, Error: Display>,
         TExcluded: TryFrom<u64, Error: Display>,
     {
-        Self::try_from_ordered_iter_roi_internal(iter).map(|r| r.build(bounds))
+        Self::try_from_ordered_iter(iter.with_roi(bounds))
     }
     pub fn try_from_span_iter<TIter, T>(iter: TIter) -> Result<Self, io::Error>
     where

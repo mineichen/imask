@@ -77,8 +77,8 @@ where
                 }
                 Some(Err(e)) => return Ready(Err(e)),
                 None => {
-                    let width = this.stream.width();
-                    return Ready(this.builder.take().unwrap().build_global(width));
+                    let bounds = this.stream.bounds();
+                    return Ready(Ok(this.builder.take().unwrap().build(bounds)));
                 }
             }
         }

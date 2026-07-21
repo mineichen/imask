@@ -438,10 +438,10 @@ mod tests {
         let mapped = Span::new(9u32..101, 40);
         let result = ranges
             .map_inplace(|source| {
-                // assert_eq!(
-                //     SortedRanges::<u32>::try_from_ordered_iter(source).unwrap(),
-                //     SortedRanges::from(source_span)
-                // );
+                assert_eq!(
+                    SortedRanges::<u32>::try_from_ordered_iter(source).unwrap(),
+                    SortedRanges::from(source_span)
+                );
 
                 SortedRanges::from(mapped).iter_roi_owned()
             })
