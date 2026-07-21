@@ -217,7 +217,7 @@ mod tests {
     }
     #[test]
     fn test_cut() {
-        let iter = [0u32..20].with_bounds(NONZERO_10, NONZERO_10);
+        let iter = std::iter::once(0u32..20).with_bounds(NONZERO_10, NONZERO_10);
         let span = SortedRangesSpanIter::new(iter);
         assert_eq!(
             vec!(Span::new(0..10, 0), Span::new(0..10, 1)),

@@ -581,9 +581,8 @@ mod tests {
         use crate::{Rect, SortedRanges};
 
         let bounds = Rect::new(0u32, 0, NONZERO_1000, NONZERO_1000);
-        let sorted = SortedRanges::<u64, u64>::try_from_ordered_iter_roi(
-            [10u64..20, 30..40, 1050..1060],
-            bounds,
+        let sorted = SortedRanges::<u64, u64>::try_from_ordered_iter(
+            [10u64..20, 30..40, 1050..1060].with_roi(bounds),
         )
         .unwrap();
         let expected: Vec<_> = sorted.iter_roi::<NonZeroRange<u64>>().collect();
@@ -666,7 +665,7 @@ mod tests {
         );
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let original =
-            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi).unwrap();
+            SortedRanges::<u64, u64>::try_from_ordered_iter(local_ranges.clone().with_roi(roi)).unwrap();
 
         let async_buf = {
             let mut buf = Vec::new();
@@ -715,7 +714,7 @@ mod tests {
         );
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let original =
-            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(local_ranges.clone(), roi).unwrap();
+            SortedRanges::<u64, u64>::try_from_ordered_iter(local_ranges.clone().with_roi(roi)).unwrap();
 
         let sync_buf = {
             let mut buf = Vec::new();
@@ -732,7 +731,7 @@ mod tests {
         assert_eq!(reader.bounds(), roi);
         let reader_ranges: Vec<_> = reader.try_collect().await.unwrap();
         let via_async =
-            SortedRanges::<u64, u64>::try_from_ordered_iter_roi(reader_ranges, roi).unwrap();
+            SortedRanges::<u64, u64>::try_from_ordered_iter(reader_ranges.with_roi(roi)).unwrap();
         assert_eq!(via_async, original);
     }
 }

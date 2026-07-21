@@ -103,7 +103,7 @@ mod tests {
     fn summarize_multiline() {
         let rect = Rect::new(10u32, 10, NON_ZERO_10, NON_ZERO_10);
 
-        let via_span = rect.clone().into_spans().into_ranges::<Range<u32>>();
+        let via_span = rect.into_spans().into_ranges::<Range<u32>>();
         assert_eq!(rect, via_span.bounds());
         let via_span = via_span.collect::<Vec<_>>();
         assert_eq!(vec![0..100], via_span);

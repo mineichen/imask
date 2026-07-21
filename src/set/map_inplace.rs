@@ -417,7 +417,7 @@ mod tests {
         let mapped = Span::new(9u64..101, 40);
         let result = ranges
             .map_span_inplace(|source| {
-                assert_eq!(vec![source_span], source.map(|x| x).collect::<Vec<_>>());
+                assert_eq!(vec![source_span], source.collect::<Vec<_>>());
                 SortedRanges::from(mapped).spans_owned()
             })
             .unwrap()

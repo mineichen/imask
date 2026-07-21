@@ -283,10 +283,11 @@ mod tests {
     }
     #[test]
     #[should_panic(expected = "other_error")]
-    fn inner_panick_doesnt_abort() {
-        SanitizeSortedDisjoint::new([1u32..=10, 0..=10]).for_each(|_| {
-            panic!("other_error");
-        });
+    fn inner_panic_doesnt_abort() {
+        let mut iter = SanitizeSortedDisjoint::new([1u32..=10, 0..=10]);
+        assert_eq!(Some(1..=10), iter.next());
+        assert_eq!(None, iter.next());
+        panic!("other_error");
     }
 
     #[test]
@@ -294,6 +295,7 @@ mod tests {
         debug_assertions,
         should_panic(expected = "StartAfterEnd { start: 10, end_exclusive: 10 }")
     )]
+    #[allow(clippy::reversed_empty_ranges)]
     fn range_with_end_bigger_start_after_initial() {
         assert_eq!(
             Some(0..=2),
@@ -310,6 +312,7 @@ mod tests {
         not(debug_assertions),
         should_panic(expected = "Panic after wrong item")
     )]
+    #[allow(clippy::reversed_empty_ranges)]
     fn range_with_end_bigger_start_single() {
         SanitizeSortedDisjoint::new([10u32..=9]).next();
         panic!("Panic after wrong item");

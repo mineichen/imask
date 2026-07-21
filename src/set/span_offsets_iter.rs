@@ -49,10 +49,7 @@ where
         self.prev_end = end;
         let mut total_len = end - start;
 
-        loop {
-            let Some(span) = self.iter.next() else {
-                break;
-            };
+        for span in &mut self.iter {
             let next_start = span.y * self.width + span.x.start;
             let next_end = span.y * self.width + span.x.end;
             debug_assert!(

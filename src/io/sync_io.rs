@@ -471,9 +471,8 @@ mod tests {
         use crate::SortedRanges;
 
         let bounds = Rect::new(0u32, 0, NONZERO_1000, NONZERO_1000);
-        let sorted = SortedRanges::<u64, u64>::try_from_ordered_iter_roi(
-            [10u64..20, 30..40, 1050..1060],
-            bounds,
+        let sorted = SortedRanges::<u64, u64>::try_from_ordered_iter(
+            [10u64..20, 30..40, 1050..1060].with_roi(bounds),
         )
         .unwrap();
         let expected: Vec<_> = sorted.iter_roi::<NonZeroRange<u64>>().collect();
@@ -523,9 +522,8 @@ mod tests {
         let roi = Rect::new(offset_x, offset_y, width, height);
 
         let local_ranges: Vec<Range<u64>> = vec![10u64..30, 45..50, 205..210];
-        let original = crate::SortedRanges::<u64, u64>::try_from_ordered_iter_roi(
+        let original = crate::SortedRanges::<u64, u64>::try_from_ordered_iter(
             local_ranges.clone().with_roi(roi),
-            roi,
         )
         .unwrap();
 
@@ -539,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_to_sorted_ranges_roundtrip_with_offset() {
+    fn reader_to_sorted_ranges_roundtrip_with_offset() -> TestResult {
         let offset_x = 1u32;
         let offset_y = 2u32;
         let width = NonZeroU32::new(100).unwrap();
@@ -547,11 +545,8 @@ mod tests {
         let roi = Rect::new(offset_x, offset_y, width, height);
 
         let local_ranges: Vec<Range<u64>> = vec![10u64..30, 45..50, 205..210];
-        let original = crate::SortedRanges::<u64, u64>::try_from_ordered_iter_roi(
-            local_ranges.clone().with_roi(roi),
-            roi,
-        )
-        .unwrap();
+        let local_ranges_roi = local_ranges.clone().with_roi(roi);
+        let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi).unwrap();
 
         let mut buf = Vec::new();
         SyncRangeWriter::new(&mut buf, original.iter_roi::<Range<u64>>().with_roi(roi))
@@ -561,11 +556,9 @@ mod tests {
         let reader = ReaderRangeIterator::<_, Range<u64>>::try_new(&buf[..]).unwrap();
         assert_eq!(reader.bounds(), roi);
         let reader_ranges: Vec<_> = reader.collect::<io::Result<Vec<_>>>().unwrap();
-        let via_reader = crate::SortedRanges::<u64, u64>::try_from_ordered_iter_roi(
-            reader_ranges.with_roi(roi),
-            roi,
-        )
-        .unwrap();
+        let via_reader =
+            SortedRanges::<u64>::try_from_ordered_iter(reader_ranges.with_roi(roi)).unwrap();
         assert_eq!(via_reader, original);
+        Ok(())
     }
 }

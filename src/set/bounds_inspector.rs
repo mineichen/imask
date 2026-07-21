@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn single_range_crossing_image_width() {
-        let source = [2..27usize].with_bounds(WIDTH_U32, WIDTH_U32);
+        let source = std::iter::once(2..27usize).with_bounds(WIDTH_U32, WIDTH_U32);
         let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         assert_eq!(1, (&mut inspector).count());
         let b = const { Rect::new(0, 0, NonZero::new(10).unwrap(), NonZero::new(3).unwrap()) };

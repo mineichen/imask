@@ -499,7 +499,7 @@ mod tests {
                 }
                 prev = cur;
             }
-            let runs = (transitions + 1) / 2;
+            let runs = transitions.div_ceil(2);
             if runs > 1 {
                 return false;
             }

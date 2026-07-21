@@ -86,6 +86,7 @@ mod tests {
 
     #[test]
     fn cast_u64_to_u8() {
-        assert_eq!(255u8, 255u64.cast_unchecked());
+        let cast: u8 = 255u64.cast_unchecked();
+        assert_eq!(255u8, cast);
     }
 }

@@ -215,7 +215,7 @@ mod tests {
     fn simple_range() {
         let x = RectIterator::new(2u16, 4, NON_ZERO_5, NON_ZERO_5, NON_ZERO_10);
         assert_eq!(
-            vec!(42..47, 52..57, 62..67, 72..77, 82..87),
+            vec!(42u16..47, 52..57, 62..67, 72..77, 82..87),
             x.collect::<Vec<_>>()
         )
     }

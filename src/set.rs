@@ -322,7 +322,7 @@ where
 {
     fn from(span: Span<T>) -> Self {
         let bounds = Rect::<T>::from(span).cast_unchecked::<u32>();
-        // Avoid additional bound on num_traits::Zero
+        #[allow(clippy::eq_op, reason = "Avoid additional bound on num_traits::Zero")]
         let zero = span.x.start - span.x.start;
         Self {
             included: vec![span.x.len()],
@@ -695,10 +695,14 @@ mod tests {
     #[cfg(feature = "range-set-blaze-0_5")]
     #[test]
     fn combine_inline() {
-        let a = SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..20, 30..40], TEST_BOUNDS)
-            .unwrap();
-        let b = SortedRanges::<u8, u8>::try_from_ordered_iter_roi([20u32..30, 41..45], TEST_BOUNDS)
-            .unwrap();
+        let a = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [10u32..20, 30..40].with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
+        let b = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [20u32..30, 41..45].with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
 
         let b_iter = b.iter_roi::<RangeInclusive<u64>>();
         let a = a
@@ -717,8 +721,9 @@ mod tests {
 
     #[test]
     fn ranges_starting_at_zero() {
-        let map =
-            SortedRanges::<u32, u32>::try_from_ordered_iter_roi([0u64..1, 5u64..6], TEST_BOUNDS);
+        let map = SortedRanges::<u32, u32>::try_from_ordered_iter(
+            [0u64..1, 5u64..6].with_roi(TEST_BOUNDS),
+        );
 
         let map = map.unwrap();
         let collected: Vec<_> = map.iter_roi::<std::ops::Range<u64>>().collect();
@@ -727,8 +732,10 @@ mod tests {
 
     #[test]
     fn split_when_collection_becomes_bigger() {
-        let a = SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..15, 30..35], TEST_BOUNDS)
-            .unwrap();
+        let a = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [10u32..15, 30..35].with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
 
         let a = a
             .map_inplace(|iter| {
@@ -749,8 +756,10 @@ mod tests {
 
     #[test]
     fn split_returns_none_when_empty() {
-        let a =
-            SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..15], TEST_BOUNDS).unwrap();
+        let a = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            std::iter::once(10u32..15).with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
 
         let result =
             a.map_inplace(|_| std::iter::empty().with_bounds(NonZeroU32::MIN, NonZeroU32::MIN));
@@ -760,9 +769,10 @@ mod tests {
 
     #[test]
     fn range_with_initial_offset() {
-        let encoded =
-            SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..20, 255..257], TEST_BOUNDS)
-                .unwrap();
+        let encoded = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [10u32..20, 255..257].with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
         assert_eq!(
             vec![10u64..=19, 255u64..=256],
             encoded.iter_roi_owned().collect::<Vec<_>>()
@@ -771,9 +781,10 @@ mod tests {
 
     #[test]
     fn owned_iterator() {
-        let encoded =
-            SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..20, 255..257], TEST_BOUNDS)
-                .unwrap();
+        let encoded = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [10u32..20, 255..257].with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
         let collected: Vec<_> = encoded.iter_roi_owned().collect();
         assert_eq!(2, collected.len());
         assert_eq!(10u64..=19, collected[0]);
@@ -781,38 +792,45 @@ mod tests {
     }
     #[test]
     fn assert_big_gap_causes_error() {
-        let error =
-            SortedRanges::<u16, u8>::try_from_ordered_iter_roi([10u32..20, 276..280], TEST_BOUNDS)
-                .unwrap_err();
+        let error = SortedRanges::<u16, u8>::try_from_ordered_iter(
+            [10u32..20, 276..280].with_roi(TEST_BOUNDS),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("out of range"), "{error}");
     }
 
     #[test]
     fn assert_big_ranges_cause_error() {
-        let error = SortedRanges::<u8, u16>::try_from_ordered_iter_roi([10u32..280], TEST_BOUNDS)
-            .unwrap_err();
+        let error = SortedRanges::<u8, u16>::try_from_ordered_iter(
+            core::iter::once(10u32..280).with_roi(TEST_BOUNDS),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("out of range"), "{error}");
     }
     #[test]
     fn zero_ranges_cause_error() {
-        let error = SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..10], TEST_BOUNDS)
-            .unwrap_err();
+        let error = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            core::iter::once(10u32..10).with_roi(TEST_BOUNDS),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("must be >"), "{error}");
     }
 
     #[test]
     fn overlapping_cause_error() {
-        let error =
-            SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..12, 11..12], TEST_BOUNDS)
-                .unwrap_err();
+        let error = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [10u32..12, 11..12].with_roi(TEST_BOUNDS),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("must be >"), "{error}");
     }
 
     #[test]
     fn iterate_with_different_output_types() {
-        let encoded =
-            SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..15, 30..35], TEST_BOUNDS)
-                .unwrap();
+        let encoded = SortedRanges::<u8, u8>::try_from_ordered_iter(
+            [10u32..15, 30..35].with_roi(TEST_BOUNDS),
+        )
+        .unwrap();
 
         let as_range: Vec<_> = encoded.iter_roi::<Range<u64>>().collect();
         assert_eq!(vec![10u64..15, 30..35], as_range);
@@ -907,9 +925,8 @@ mod tests {
             .unwrap()
             .collect::<Vec<_>>();
         assert_eq!(1, ranges.len());
-        let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter_roi(
-            ranges.with_bounds(RECT_SIZE, RECT_SIZE),
-            rect,
+        let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(
+            ranges.with_bounds(RECT_SIZE, RECT_SIZE).with_roi(rect),
         )
         .unwrap();
 
@@ -1016,16 +1033,9 @@ mod tests {
             NonZero::new(50).unwrap(),
             NonZero::new(30).unwrap(),
         );
-        let sorted = SortedRanges::<u32, u32>::try_from_ordered_iter_roi(
-            vec![0u64..10, 60..70].with_roi(Rect {
-                x: 0,
-                y: 0,
-                width: roi.width,
-                height: roi.height,
-            }),
-            roi,
-        )
-        .unwrap();
+        let sorted =
+            SortedRanges::<u32, u32>::try_from_ordered_iter(vec![0u64..10, 60..70].with_roi(roi))
+                .unwrap();
 
         let iter = sorted.iter_roi::<Range<u64>>();
         assert_eq!(
@@ -1059,11 +1069,4 @@ mod tests {
         assert_eq!(vec![0u64..131070], ranges);
         Ok(())
     }
-}
-
-pub trait IntoRoiIterator {
-    type IntoIter: Iterator<Item = Self::Item>;
-    type Item: CreateRange;
-
-    fn into_roi_iterator() -> Self::IntoIter;
 }
