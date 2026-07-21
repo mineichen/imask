@@ -152,7 +152,6 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         TExcluded: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
     {
         let original_len = self.included.len();
-        let width = self.bounds.width.get();
         let cell = Rc::new(RefCell::new((self, 0usize)));
 
         let source = SourceIterator {
@@ -164,6 +163,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         let source_spans = SortedRangesSpanIter::new(source);
         let items = f(source_spans);
         let new_bounds = items.bounds();
+        let width = new_bounds.width.get();
         let offset_x = new_bounds.x as u64;
         let offset_y = new_bounds.y as u64;
         // The closure works with global spans (containing bounds offset).
@@ -452,6 +452,31 @@ mod tests {
             result,
             vec!(mapped),
             "map_inplace should update bounds when ranges expand beyond the original area"
+        );
+    }
+
+    #[test]
+    fn map_span_inplace_can_return_other_dimensions() {
+        let base = Rect::new(
+            0u32,
+            0,
+            NonZero::new(100).unwrap(),
+            NonZero::new(100).unwrap(),
+        );
+        let ranges = SortedRanges::<u32>::try_from_span_iter(base.into_spans()).unwrap();
+        let expected = Rect::new(
+            50,
+            50,
+            NonZero::new(200).unwrap(),
+            NonZero::new(100).unwrap(),
+        );
+        let ranges = ranges
+            .map_span_inplace(|_source| expected.into_spans())
+            .expect("Should be non-empty");
+
+        assert_eq!(
+            SortedRanges::try_from_span_iter(expected.into_spans()).unwrap(),
+            ranges
         );
     }
 
