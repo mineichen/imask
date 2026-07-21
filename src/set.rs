@@ -6,11 +6,11 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
-use crate::span::ClipSpanIter;
 use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
     UncheckedCast, WithBounds, WithRoi,
 };
+use crate::{span::ClipSpanIter, visualize_iter::IterVisualizer};
 
 fn invalid_data<T: Display>(e: T) -> std::io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
@@ -196,12 +196,10 @@ pub trait ImaskSet: IntoIterator + Sized {
 impl<I: IntoIterator> ImaskSet for I {}
 
 /// Represents areas on images. It's designed to efficiently support various image sizes.
-/// Both, TIncluded and TExcluded are expected to always be > 0. Use non-zero signed types
+/// Both, TIncluded and TExcluded are expected to always be > 0 (except the first exclude might be 0)
 /// Included represents the number of pixels to include, excluded encodes the gap between two included ranges
 ///
-/// Included.len() = excluded.len() + 1
 ///
-/// Meta is expected to be indexable for each included range
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive))]
 pub struct SortedRanges<TIncluded, TExcluded = TIncluded> {
@@ -209,11 +207,19 @@ pub struct SortedRanges<TIncluded, TExcluded = TIncluded> {
     excluded: Vec<TExcluded>,
     bounds: Rect<u32>,
 }
-impl<TIncluded, TExcluded> Debug for SortedRanges<TIncluded, TExcluded> {
+impl<TIncluded: UncheckedCast<u64>, TExcluded: UncheckedCast<u64>> Debug
+    for SortedRanges<TIncluded, TExcluded>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SortedRanges")
-            .field("range_count", &self.included.len())
             .field("bounds", &self.bounds)
+            .field(
+                "spans",
+                &format_args!(
+                    "{}",
+                    IterVisualizer::<_, _, 10>::new_with_size(self.spans::<u64>(), self.len())
+                ),
+            )
             .finish()
     }
 }
@@ -742,10 +748,12 @@ mod tests {
 
         let a = a
             .map_inplace(|iter| {
+                let bounds = iter.bounds();
                 iter.flat_map(|x| {
                     let with_offset = (*x.start() + 10)..=(*x.end() + 10);
                     [x, with_offset]
                 })
+                .with_roi(bounds)
             })
             .unwrap();
 
@@ -760,7 +768,8 @@ mod tests {
         let a =
             SortedRanges::<u8, u8>::try_from_ordered_iter_roi([10u32..15], TEST_BOUNDS).unwrap();
 
-        let result = a.map_inplace(|_| std::iter::empty());
+        let result =
+            a.map_inplace(|_| std::iter::empty().with_bounds(NonZeroU32::MIN, NonZeroU32::MIN));
 
         assert!(result.is_none());
     }

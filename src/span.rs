@@ -1,5 +1,5 @@
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -43,6 +43,15 @@ pub trait IntoSpanIter<T> {
 pub struct Span<T> {
     pub y: T,
     pub x: NonZeroRange<T>,
+}
+
+impl<T: Display> Display for Span<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "({}..{}, {})",
+            self.x.start, self.x.end, self.y
+        ))
+    }
 }
 
 impl<T: SignedNonZeroable + Copy + Sub<Output = T>> From<Span<T>> for Rect<T>

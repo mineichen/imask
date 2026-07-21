@@ -14,7 +14,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     /// Returns Some(SortedRanges) if non-empty, None if empty.
     /// ```
     /// use std::ops::RangeInclusive;
-    /// use imask::{Rect, SortedRanges, SourceIterator, ImaskSet};
+    /// use imask::{Rect, SortedRanges, SourceIterator, ImaskSet, ImageDimension};
     /// use std::num::NonZero;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,10 +22,11 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     /// let source = [10u32..20, 30..45, 50..60].with_bounds(size, size);
     /// let ranges = SortedRanges::<u16, u16>::try_from_ordered_iter(source)?;
     /// let ranges = ranges.map_inplace(|iter| {
+    ///     let roi = iter.bounds();
     ///     iter.map(|x| {
     ///         let (start, end) = x.into_inner();
     ///         (start+5)..=(end + 5)
-    ///     })
+    ///     }).with_roi(roi)
     /// }).expect("Is not empty");
     /// assert_eq!(
     ///     vec!(15u64..25, 35..50, 55..65),
@@ -36,7 +37,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     /// ```
     pub fn map_inplace<TIter, TFun>(self, f: TFun) -> Option<Self>
     where
-        TIter: Iterator<Item = RangeInclusive<u64>>,
+        TIter: Iterator<Item = RangeInclusive<u64>> + ImageDimension,
         TFun: FnOnce(SourceIterator<TIncluded, TExcluded>) -> TIter,
         TIncluded: TryFrom<u64, Error: Debug> + Clone,
         TExcluded: TryFrom<u64, Error: Debug> + Clone,
@@ -54,6 +55,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         };
 
         let items = f(source);
+        let new_bounds = items.bounds();
         let offsets_iter = RangeToOffsetsIter::<_, TIncluded, TExcluded>::new(items);
         let mut cache: VecDeque<(TExcluded, TIncluded)> = VecDeque::new();
         let mut write_pos = 0;
@@ -86,6 +88,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
         let not_empty = {
             let mut x = cell.borrow_mut();
             let col = &mut x.0;
+            col.bounds = new_bounds;
             while let Some(tuple) = cache.pop_front() {
                 write_tuple(col, tuple, &mut write_pos);
             }
@@ -95,8 +98,13 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             !x.0.included.is_empty()
         };
 
-        not_empty.then(move|| {
-            Rc::try_unwrap(cell).expect("You mustn't move the SourceIterator outside the lambda provided to map_inplace").into_inner().0
+        not_empty.then(move || match Rc::try_unwrap(cell) {
+            Ok(x) => x.into_inner().0,
+            Err(_) => {
+                panic!(
+                    "You mustn't move the SourceIterator outside the lambda provided to map_inplace"
+                )
+            }
         })
     }
 
@@ -123,9 +131,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     /// let ranges = SortedRanges::<u32, u32>::try_from_span_iter(spans)?;
     ///
     /// let result = ranges.map_span_inplace(|source| {
-    ///     let extra = vec![
-    ///         Span::new(NonZeroRange::try_from(0..50).unwrap(), 1u64),
-    ///     ];
+    ///     let extra = SortedRanges::from(Span::new(0..50, 1u64)).spans_owned();
     ///     source.union(extra)
     /// }).expect("Non-empty");
     ///
@@ -140,15 +146,13 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     /// ```
     pub fn map_span_inplace<TIter, TFun>(self, f: TFun) -> Option<Self>
     where
-        TIter: Iterator<Item = Span<u64>>,
+        TIter: Iterator<Item = Span<u64>> + ImageDimension,
         TFun: FnOnce(SortedRangesSpanIter<SourceIterator<TIncluded, TExcluded>>) -> TIter,
         TIncluded: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
         TExcluded: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
     {
         let original_len = self.included.len();
         let width = self.bounds.width.get();
-        let offset_x = self.bounds.x as u64;
-        let offset_y = self.bounds.y as u64;
         let cell = Rc::new(RefCell::new((self, 0usize)));
 
         let source = SourceIterator {
@@ -159,6 +163,9 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
 
         let source_spans = SortedRangesSpanIter::new(source);
         let items = f(source_spans);
+        let new_bounds = items.bounds();
+        let offset_x = new_bounds.x as u64;
+        let offset_y = new_bounds.y as u64;
         // The closure works with global spans (containing bounds offset).
         // Convert them to local spans for writing back.
         let items = items.map(move |span| {
@@ -207,6 +214,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
                 write_tuple(col, tuple, &mut write_pos);
             }
 
+            col.bounds = new_bounds;
             col.included.truncate(write_pos);
             col.excluded.truncate(write_pos);
             !x.0.included.is_empty()
@@ -285,7 +293,7 @@ mod tests {
 
         let result = ranges
             .map_span_inplace(|source| {
-                let extra = vec![Span::new(NonZeroRange::try_from(0..50).unwrap(), 2u64)];
+                let extra = SortedRanges::from(Span::new(0..50, 2u64)).spans_owned();
                 source.union(extra)
             })
             .expect("Non-empty");
@@ -333,7 +341,7 @@ mod tests {
                     assert_eq!(Range::from(s.x), 1..101, "global x.start should be 1");
                     assert!(s.y >= 2, "global y should be >= 2 for bounds.y = 2");
                 });
-                let remove = [Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 3u64)];
+                let remove = SortedRanges::from(Span::new(1u32..101, 3)).spans_owned();
                 verified.with_roi(bounds).subtract(remove)
             })
             .expect("Non-empty");
@@ -366,7 +374,7 @@ mod tests {
         // Remove half of the second row
         let result = ranges
             .map_span_inplace(|source| {
-                let remove = vec![Span::new(NonZeroRange::try_from(0..50).unwrap(), 1u64)];
+                let remove = SortedRanges::from(Span::new(0u64..50, 1)).spans_owned();
                 source.subtract(remove)
             })
             .expect("Non-empty");
@@ -402,6 +410,53 @@ mod tests {
     }
 
     #[test]
+    fn map_span_inplace_bounds_update() {
+        let source_span = Span::new(10u64..100, 30);
+        let ranges = SortedRanges::from(source_span);
+
+        let mapped = Span::new(9u64..101, 40);
+        let result = ranges
+            .map_span_inplace(|source| {
+                assert_eq!(vec![source_span], source.map(|x| x).collect::<Vec<_>>());
+                SortedRanges::from(mapped).spans_owned()
+            })
+            .unwrap()
+            .spans_owned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            result,
+            vec!(mapped),
+            "map_inplace should update bounds when ranges expand beyond the original area"
+        );
+    }
+    #[test]
+    fn map_inplace_bounds_update() {
+        let source_span = Span::new(10u32..100, 30);
+        let ranges = SortedRanges::from(source_span);
+
+        let mapped = Span::new(9u32..101, 40);
+        let result = ranges
+            .map_inplace(|source| {
+                // assert_eq!(
+                //     SortedRanges::<u32>::try_from_ordered_iter(source).unwrap(),
+                //     SortedRanges::from(source_span)
+                // );
+
+                SortedRanges::from(mapped).iter_roi_owned()
+            })
+            .unwrap()
+            .spans_owned()
+            .collect::<Vec<Span<u32>>>();
+
+        assert_eq!(
+            result,
+            vec!(mapped),
+            "map_inplace should update bounds when ranges expand beyond the original area"
+        );
+    }
+
+    #[test]
     fn map_span_inplace_preserves_row_boundaries() {
         let width = NonZero::new(100u32).unwrap();
         let height = NonZero::new(3u32).unwrap();
@@ -417,7 +472,7 @@ mod tests {
         // Subtract middle portion of middle row — rows 0 and 2 must stay separate
         let result = ranges
             .map_span_inplace(|source| {
-                let remove = vec![Span::new(NonZeroRange::try_from(25..75).unwrap(), 1u64)];
+                let remove = SortedRanges::from(Span::new(25u32..75, 1)).spans_owned();
                 source.subtract(remove)
             })
             .expect("Non-empty");

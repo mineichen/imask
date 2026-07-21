@@ -14,6 +14,7 @@ mod rect;
 mod set;
 mod span;
 mod unchecked_cast;
+mod visualize_iter;
 mod with_bounds;
 mod with_roi;
 
