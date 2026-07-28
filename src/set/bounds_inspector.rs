@@ -42,18 +42,25 @@ where
             max_row: u32::MIN,
         }
     }
+}
 
+impl<T, R> BoundsInspector<T, R>
+where
+    T: Iterator + ImageDimension,
+    R: CreateRange,
+{
     pub fn bounds(&self) -> Option<Rect<u32>> {
         if self.max_row < self.min_row {
             return None;
         }
 
+        let parent_bounds = self.parent.bounds();
         let width = self.max_column - self.min_column + 1;
         let height = self.max_row - self.min_row + 1;
 
         Some(Rect::new(
-            self.min_column,
-            self.min_row,
+            parent_bounds.x + self.min_column,
+            parent_bounds.y + self.min_row,
             NonZero::new(width).expect("width should be non-zero"),
             NonZero::new(height).expect("height should be non-zero"),
         ))
@@ -87,8 +94,9 @@ where
         let start_row = (start / width_val).cast_unchecked();
         let start_col = (start % width_val).cast_unchecked();
 
-        let end_row = (end / width_val).cast_unchecked();
-        let end_col = (end % width_val).cast_unchecked();
+        let last = end - One::one();
+        let end_row = (last / width_val).cast_unchecked();
+        let end_col = (last % width_val).cast_unchecked();
 
         self.min_row = self.min_row.min(start_row);
         self.max_row = self.max_row.max(end_row);
@@ -163,6 +171,19 @@ mod tests {
     const WIDTH_U32: NonZero<u32> = NonZero::new(10u32).unwrap();
 
     #[test]
+    fn bounds_uses_parent_offset() {
+        let roi = Rect::new(100, 100, WIDTH_U32, WIDTH_U32);
+        let mut inspector = [13..18usize, 32..33]
+            .with_roi(roi)
+            .inspect_bounds::<Range<usize>>();
+        assert_eq!(2, (&mut inspector).count());
+        let expected =
+            const { Rect::new(102, 101, NonZero::new(6).unwrap(), NonZero::new(3).unwrap()) };
+        assert_eq!(inspector.bounds(), Some(expected));
+        assert_eq!(inspector.width(), WIDTH_U32);
+    }
+
+    #[test]
     fn single_range_crossing_image_width() {
         let source = std::iter::once(2..27usize).with_bounds(WIDTH_U32, WIDTH_U32);
         let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
@@ -192,7 +213,7 @@ mod tests {
             .inspect_bounds();
         // let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         assert_eq!(2, (&mut inspector).count());
-        let b = const { Rect::new(2, 1, NonZero::new(7).unwrap(), NonZero::new(3).unwrap()) };
+        let b = const { Rect::new(2, 1, NonZero::new(6).unwrap(), NonZero::new(3).unwrap()) };
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
