@@ -17,8 +17,6 @@ fn invalid_data<T: Display>(e: T) -> std::io::Error {
 }
 
 mod bounds_inspector;
-// mod chunk_by_row;
-mod clip_2d;
 #[cfg(feature = "range-set-blaze-0_5")]
 mod dilate;
 #[cfg(feature = "async-io")]
@@ -33,7 +31,6 @@ mod span_offsets_iter;
 // mod split_rows;
 
 pub use bounds_inspector::*;
-pub use clip_2d::*;
 #[cfg(feature = "range-set-blaze-0_5")]
 pub use dilate::*;
 pub use iter::*;
@@ -106,23 +103,6 @@ pub trait ImaskSet: IntoIterator + Sized {
     {
         ClipSpanIter::new(self.into_iter(), roi)
     }
-
-    fn try_clip_2d(
-        self,
-        roi: Rect<u32>,
-    ) -> Result<Clip2dIter<Self::IntoIter, Self::Item>, RoiWidthExceedsOriginal>
-    where
-        Self::IntoIter: ImageDimension,
-    {
-        Clip2dIter::try_new(self.into_iter(), roi)
-    }
-
-    // fn split_rows(self) -> SplitRowsIter<Self::IntoIter, Self::Item>
-    // where
-    //     Self::IntoIter: ImageDimension,
-    // {
-    //     SplitRowsIter::new(self.into_iter())
-    // }
 
     fn into_ranges<TOut: CreateRange<Item: SignedNonZeroable>>(
         self,
@@ -913,28 +893,6 @@ mod tests {
             .iter_global_with::<Range<u32>>(NonZero::new(10u32).unwrap())
             .collect();
         assert_eq!(with_smaller, vec![0u32..1, 3..4, 8..11]);
-    }
-
-    #[test]
-    fn clip_full_rect_produces_single_range() {
-        const GLOBAL_WIDTH: NonZeroU32 = NonZero::new(10u32).unwrap();
-        const RECT_SIZE: NonZeroU32 = NonZero::new(5).unwrap();
-        let rect = Rect::new(2u32, 2, RECT_SIZE, RECT_SIZE);
-
-        let ranges = rect
-            .into_rect_iter::<Range<u32>>(GLOBAL_WIDTH)
-            .try_clip_2d(rect)
-            .unwrap()
-            .collect::<Vec<_>>();
-        assert_eq!(1, ranges.len());
-        let ranges = SortedRanges::<u16>::try_from_ordered_iter(
-            ranges.with_bounds(RECT_SIZE, RECT_SIZE).with_roi(rect),
-        )
-        .unwrap();
-
-        assert_eq!(1, ranges.len());
-        let roi: Vec<_> = ranges.iter_roi::<Range<u64>>().collect();
-        assert_eq!(vec![0u64..25], roi);
     }
 
     #[test]
