@@ -168,6 +168,16 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
             });
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (_, a_hi) = self.a.size_hint_total();
+        let (_, b_hi) = self.b.size_hint_total();
+        let hi = match (a_hi, b_hi) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            _ => None,
+        };
+        (0, hi)
+    }
 }
 
 #[cfg(test)]

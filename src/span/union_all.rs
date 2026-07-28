@@ -90,6 +90,22 @@ where
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let accumulator = self.accumulator.is_some() as usize;
+        let mut lo = accumulator;
+        let mut hi = Some(accumulator);
+        for entry in self.heap.iter() {
+            let pending = entry.pending.is_some() as usize;
+            let (e_lo, e_hi) = entry.iter.size_hint();
+            lo = lo.max(e_lo.saturating_add(pending));
+            hi = match (hi, e_hi) {
+                (Some(x), Some(h)) => Some(x.max(h.saturating_add(pending))),
+                _ => None,
+            };
+        }
+        (lo, hi)
+    }
 }
 
 struct PendingIter<I: Iterator> {

@@ -53,6 +53,10 @@ where
         });
         Some((excluded, included))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
 }
 
 impl<TIter, TIncluded, TExcluded> ImageDimension for RangeToOffsetsIter<TIter, TIncluded, TExcluded>

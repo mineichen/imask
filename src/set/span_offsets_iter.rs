@@ -82,6 +82,13 @@ where
         });
         Some((excluded, included))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, hi) = self.iter.size_hint();
+        let buffered = self.buffered.is_some() as usize;
+        let lo = usize::from(lo.saturating_add(buffered) > 0);
+        (lo, hi.map(|h| h.saturating_add(buffered)))
+    }
 }
 
 impl<TIter, TIncluded, TExcluded> ImageDimension for SpanToOffsetsIter<TIter, TIncluded, TExcluded>

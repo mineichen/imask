@@ -175,6 +175,14 @@ impl QuadSpanIter {
         self.row_y > self.row_y_end
     }
 
+    fn remaining(&self) -> usize {
+        if self.exhausted() {
+            0
+        } else {
+            (self.row_y_end - self.row_y + 1) as usize
+        }
+    }
+
     fn current(&self) -> Span<u32> {
         debug_assert!(!self.exhausted());
         let cs = self.x_left.max(0) as u32;
@@ -354,6 +362,15 @@ impl Iterator for AffineTransformHeap {
             y,
             x: NonZeroRange::new_debug_checked_zeroable(first.x.start, merged_end),
         })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let pending = self.pending.is_some() as usize;
+        let mut total = pending;
+        for entry in self.heap.iter() {
+            total = total.saturating_add(entry.iter.remaining());
+        }
+        (usize::from(total > 0), Some(total))
     }
 }
 

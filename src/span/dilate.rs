@@ -108,6 +108,11 @@ where
             });
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, hi) = self.inner.size_hint();
+        (lo, hi)
+    }
 }
 
 impl<I, T> ImageDimension for DilateSpanIter<I, T>
@@ -150,6 +155,10 @@ where
             ),
             y: span.y + self.y_shift_unsigned,
         })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.parent.size_hint()
     }
 }
 

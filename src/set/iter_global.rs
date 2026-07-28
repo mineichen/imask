@@ -143,6 +143,15 @@ where
             r
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let zero = TOut::Item::default();
+        let has_remaining = self.remaining > zero;
+        let has_pending = self.pending_start < self.pending_end;
+        let (ex_lo, _) = self.excluded.size_hint();
+        let lo = usize::from(has_remaining || has_pending || ex_lo > 0);
+        (lo, None)
+    }
 }
 
 impl<TI, TE, TOut: CreateRange> FusedIterator for SortedRangesIterGlobal<TI, TE, TOut> where

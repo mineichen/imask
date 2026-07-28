@@ -125,6 +125,17 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
             },
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (a_lo, a_hi) = self.a.size_hint_total();
+        let (b_lo, b_hi) = self.b.size_hint_total();
+        let lo = a_lo.max(b_lo);
+        let hi = match (a_hi, b_hi) {
+            (Some(a), Some(b)) => Some(a.saturating_add(b)),
+            _ => None,
+        };
+        (lo, hi)
+    }
 }
 
 #[cfg(test)]

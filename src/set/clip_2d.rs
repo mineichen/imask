@@ -160,6 +160,13 @@ where
             };
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, hi) = self.parent.size_hint();
+        let pending = self.pending.is_some() as usize;
+        let lo = usize::from(pending > 0 || lo > 0);
+        (lo, hi.map(|h| h.saturating_add(pending)))
+    }
 }
 
 impl<T, R> FusedIterator for Clip2dIter<T, R>

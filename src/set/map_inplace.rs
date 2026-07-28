@@ -271,6 +271,12 @@ where
 
         Some(out_range)
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let read_pos = self.cell.borrow().1;
+        let remaining = self.original_len.saturating_sub(read_pos);
+        (remaining, Some(remaining))
+    }
 }
 
 #[cfg(test)]

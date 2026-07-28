@@ -143,6 +143,10 @@ impl<R: Read, TRange: CreateRange<Item = u64>> Iterator for ReaderRangeIterator<
         self.last_end = end;
         Some(Ok(TRange::new_debug_checked_zeroable(start, end)))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
 }
 
 impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {

@@ -69,6 +69,13 @@ where
             },
         ))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let pending = usize::from(self.shared.pending_nextline.is_some());
+        let (lo, hi) = self.shared.source.size_hint();
+        let lo = usize::from(lo > 0 || pending > 0);
+        (lo, hi.map(|h| h.saturating_add(pending)))
+    }
 }
 pub struct ChunkByRowRangesRowIter<T, R>
 where
@@ -143,6 +150,13 @@ where
         } else {
             Some(range)
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let pending = self.pending.is_some() as usize;
+        let (lo, hi) = self.shared.borrow().source.size_hint();
+        let lo = usize::from(lo > 0 || pending > 0);
+        (lo, hi.map(|h| h.saturating_add(pending)))
     }
 }
 

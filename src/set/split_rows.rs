@@ -63,6 +63,12 @@ where
             Some(R::new_debug_checked_zeroable(start, next_row_start - start))
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, _) = self.parent.size_hint();
+        let pending = self.pending.is_some() as usize;
+        (lo.saturating_add(pending), None)
+    }
 }
 
 impl<T, R> FusedIterator for SplitRowsIter<T, R>

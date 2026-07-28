@@ -87,6 +87,13 @@ impl<
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, hi) = self.parent.size_hint();
+        let unreleased = self.unreleased.is_some() as usize;
+        let lo = usize::from(lo.saturating_add(unreleased) > 0);
+        (lo, hi.map(|h| h.saturating_add(unreleased)))
+    }
 }
 
 #[cfg(test)]

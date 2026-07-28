@@ -106,6 +106,12 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // todo: Depends on bounds
+        let (_, hi) = self.a.size_hint_total();
+        (0, hi)
+    }
 }
 
 #[cfg(test)]

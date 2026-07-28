@@ -103,6 +103,10 @@ where
 
         Some(item)
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.parent.size_hint()
+    }
 }
 
 impl<T, R: CreateRange> FusedIterator for BoundsInspector<T, R>

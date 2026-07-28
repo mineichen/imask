@@ -98,6 +98,10 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.kind.next()
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.kind.size_hint()
+    }
 }
 impl<R> Iterator for RectIteratorKind<R>
 where
@@ -109,6 +113,13 @@ where
         match self {
             Self::FullWidth(x) => x.next(),
             Self::PartialWidth(x) => x.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::FullWidth(x) => x.size_hint(),
+            Self::PartialWidth(x) => x.size_hint(),
         }
     }
 }
@@ -169,6 +180,11 @@ where
         } else {
             None
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remain = usize::from(self.start_index < self.end_index);
+        (remain, Some(remain))
     }
 }
 impl<R: CreateRange<Item: Add<Output = R::Item> + Copy + SignedNonZeroable + PartialOrd>>

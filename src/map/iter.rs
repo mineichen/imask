@@ -58,6 +58,10 @@ where
 
         Some((out_range, meta).into())
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.excluded.size_hint()
+    }
 }
 
 impl<TIncluded, TExcluded, TMeta, TRange: CreateRange> FusedIterator

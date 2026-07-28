@@ -85,6 +85,13 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // todo: Can be improved: If parent is inbound, parent bounds can be returned
+        let (_, hi) = self.parent.size_hint();
+        let pending = self.pending.is_some() as usize;
+        (0, hi.map(|h| h.saturating_add(pending)))
+    }
 }
 
 #[cfg(test)]

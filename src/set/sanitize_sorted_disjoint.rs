@@ -174,6 +174,16 @@ impl<I: Iterator<Item: CreateRange<Item: Debug + num_traits::Unsigned + Ord + Co
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if matches!(self.state, SanitizeSortedDisjointState::Error(_)) {
+            return (0, Some(0));
+        }
+        let (lo, hi) = self.iter.size_hint();
+        let pending = matches!(self.state, SanitizeSortedDisjointState::Pending(_)) as usize;
+        let lo = usize::from(lo.saturating_add(pending) > 0);
+        (lo, hi.map(|h| h.saturating_add(pending)))
+    }
 }
 
 impl<I> FusedIterator for SanitizeSortedDisjoint<I>

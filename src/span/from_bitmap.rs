@@ -87,6 +87,11 @@ where
             y: y.cast_unchecked(),
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (_, hi) = self.iter.size_hint();
+        (0, hi)
+    }
 }
 
 #[cfg(test)]

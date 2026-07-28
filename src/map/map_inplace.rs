@@ -125,6 +125,12 @@ where
 
         Some((out_range, meta))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let read_pos = self.cell.borrow().1;
+        let remaining = self.original_len.saturating_sub(read_pos);
+        (remaining, Some(remaining))
+    }
 }
 
 #[cfg(feature = "range-set-blaze-0_5")]

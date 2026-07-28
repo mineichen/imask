@@ -184,6 +184,12 @@ where
         };
         Some(Span { x, y: global_y })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, _) = self.parent.size_hint();
+        let pending = self.pending.is_some() as usize;
+        (lo.saturating_add(pending), None)
+    }
 }
 
 // impl<T> IntoSpanIter<T> for SortedRanges<T, T> {

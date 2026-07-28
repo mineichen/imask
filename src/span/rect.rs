@@ -1,4 +1,8 @@
-use std::{fmt::Debug, num::NonZeroU32, ops::Add};
+use std::{
+    fmt::Debug,
+    num::NonZeroU32,
+    ops::{Add, Sub},
+};
 
 use num_traits::One;
 
@@ -40,7 +44,9 @@ impl<T: UncheckedCast<u32>> ImageDimension for RectSpanIter<T> {
     }
 }
 
-impl<T: Ord + One + Copy + Add<Output = T>> Iterator for RectSpanIter<T> {
+impl<T: Ord + One + Copy + Add<Output = T> + Sub<Output = T> + TryInto<usize>> Iterator
+    for RectSpanIter<T>
+{
     type Item = Span<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -50,6 +56,13 @@ impl<T: Ord + One + Copy + Add<Output = T>> Iterator for RectSpanIter<T> {
             r
         } else {
             None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match (self.y_end - self.span.y).try_into() {
+            Ok(size) => (size, Some(size)),
+            Err(_) => (0, None),
         }
     }
 }
