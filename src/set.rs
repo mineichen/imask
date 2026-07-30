@@ -10,7 +10,7 @@ use crate::visualize_iter::IterVisualizer;
 use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
     UncheckedCast, WithBounds, WithRoi,
-    span::{ClipSpanIter, InspectSpanIter},
+    span::{ClipSpanIter, InspectAlwaysSpanIter},
 };
 
 fn invalid_data<T: Display>(e: T) -> std::io::Error {
@@ -61,11 +61,29 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn inspect_bounds<R: CreateRange>(self) -> BoundsInspector<Self::IntoIter, R> {
         BoundsInspector::new(self.into_iter())
     }
-    fn inspect_spans<F>(self, f: F) -> InspectSpanIter<Self::IntoIter, F>
+    /// In contrast to inspect, inspect_always guarantees to call the lambda on all inputs spans,
+    /// even if partially consumed.
+    ///
+    /// If Self::Drop is called during unwinding, the callback will not be executed to avoid aborting the program if f() panics again
+    /// ```
+    /// use std::num::NonZeroU32;
+    /// use imask::{Rect, ImaskSet, ImageDimension};
+    ///
+    /// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
+    /// let spans = Rect::new(10u32, 20, SIZE, SIZE).into_spans();
+    /// let mut count = 0;
+    /// let inspect = spans.clone().inspect_always(|_r| {
+    ///     count += 1;
+    /// });
+    /// assert_eq!(spans.bounds(), inspect.bounds());
+    /// assert_eq!(9, inspect.take(9).count());
+    /// assert_eq!(10, count);
+    /// ```
+    fn inspect_always<F>(self, f: F) -> InspectAlwaysSpanIter<Self::IntoIter, F>
     where
         F: FnMut(&<Self::IntoIter as Iterator>::Item),
     {
-        InspectSpanIter::new(self.into_iter(), f)
+        InspectAlwaysSpanIter::new(self.into_iter(), f)
     }
     fn union<TOther: IntoIterator<Item = Span<T>>, T>(
         self,
@@ -956,19 +974,6 @@ mod tests {
         assert_eq!(bounds_with_offset, ImageDimension::bounds(&reconstructed));
         assert_eq!(spans, reconstructed.spans().collect::<Vec<_>>());
         Ok(())
-    }
-
-    #[test]
-    fn inspect_spans() {
-        const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
-        let spans = Rect::new(10u32, 20, SIZE, SIZE).into_spans();
-        let mut count = 0;
-        let inspect = spans.clone().inspect_spans(|_r| {
-            count += 1;
-        });
-        assert_eq!(spans.bounds(), inspect.bounds());
-        assert_eq!(10, inspect.count());
-        assert_eq!(10, count);
     }
 
     #[test]
