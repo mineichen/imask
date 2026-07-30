@@ -6,11 +6,12 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
+use crate::visualize_iter::IterVisualizer;
 use crate::{
     CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
     UncheckedCast, WithBounds, WithRoi,
+    span::{ClipSpanIter, InspectSpanIter},
 };
-use crate::{span::ClipSpanIter, visualize_iter::IterVisualizer};
 
 fn invalid_data<T: Display>(e: T) -> std::io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
@@ -59,6 +60,12 @@ pub trait ImaskSet: IntoIterator + Sized {
 
     fn inspect_bounds<R: CreateRange>(self) -> BoundsInspector<Self::IntoIter, R> {
         BoundsInspector::new(self.into_iter())
+    }
+    fn inspect_spans<F>(self, f: F) -> InspectSpanIter<Self::IntoIter, F>
+    where
+        F: FnMut(&<Self::IntoIter as Iterator>::Item),
+    {
+        InspectSpanIter::new(self.into_iter(), f)
     }
     fn union<TOther: IntoIterator<Item = Span<T>>, T>(
         self,
@@ -949,6 +956,19 @@ mod tests {
         assert_eq!(bounds_with_offset, ImageDimension::bounds(&reconstructed));
         assert_eq!(spans, reconstructed.spans().collect::<Vec<_>>());
         Ok(())
+    }
+
+    #[test]
+    fn inspect_spans() {
+        const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
+        let spans = Rect::new(10u32, 20, SIZE, SIZE).into_spans();
+        let mut count = 0;
+        let inspect = spans.clone().inspect_spans(|_r| {
+            count += 1;
+        });
+        assert_eq!(spans.bounds(), inspect.bounds());
+        assert_eq!(10, inspect.count());
+        assert_eq!(10, count);
     }
 
     #[test]
