@@ -13,7 +13,7 @@ use crate::{
     span::{ClipSpanIter, InspectAlwaysSpanIter},
 };
 
-fn invalid_data<T: Display>(e: T) -> std::io::Error {
+fn invalid<T: Display>(e: T) -> std::io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
 }
 
@@ -244,11 +244,11 @@ where
         TRange: CreateRange<Item: TryInto<u64, Error: Display>>,
     {
         let (start_u64, end_u64) = (
-            first_range.start().try_into().map_err(invalid_data)?,
-            first_range.end().try_into().map_err(invalid_data)?,
+            first_range.start().try_into().map_err(invalid)?,
+            first_range.end().try_into().map_err(invalid)?,
         );
         let first_len = create_checked(start_u64, end_u64)?;
-        let initial_offset = TExcluded::try_from(start_u64).map_err(invalid_data)?;
+        let initial_offset = TExcluded::try_from(start_u64).map_err(invalid)?;
         let mut included = Vec::<TIncluded>::with_capacity(size_hint);
         let mut excluded = Vec::<TExcluded>::with_capacity(size_hint);
         included.push(first_len);
@@ -265,8 +265,8 @@ where
         TRange: CreateRange<Item: TryInto<u64, Error: Display>>,
     {
         let (start_u64, end_u64) = (
-            range.start().try_into().map_err(invalid_data)?,
-            range.end().try_into().map_err(invalid_data)?,
+            range.start().try_into().map_err(invalid)?,
+            range.end().try_into().map_err(invalid)?,
         );
         self.excluded.push(create_checked(self.cur_pos, start_u64)?);
         self.included.push(create_checked(start_u64, end_u64)?);
@@ -317,7 +317,162 @@ where
             format!("end ({end}) must be > start ({start})"),
         ));
     }
-    T::try_from(end - start).map_err(invalid_data)
+    T::try_from(end - start).map_err(invalid)
+}
+
+/// Builds a [`SortedRanges`] from spans, merging touching spans.
+///
+/// (`new` takes no span) and `add` allows `start > merge_end || excluded.is_empty()`:
+/// the very first span initializes the merge window, equal starts/ends merge touching
+/// spans, and only `start < merge_end` (overlap) is an error.
+struct SortedRangesSpanBuilderInternal<TIncluded, TExcluded> {
+    width_u64: u64,
+    offset_x_u64: u64,
+    offset_y_u64: u64,
+    merge_start: u64,
+    merge_end: u64,
+    bounds: Rect<u32>,
+    excluded: Vec<TExcluded>,
+    included: Vec<TIncluded>,
+}
+
+impl<TIncluded, TExcluded> SortedRangesSpanBuilderInternal<TIncluded, TExcluded>
+where
+    TIncluded: TryFrom<u64, Error: Display>,
+    TExcluded: TryFrom<u64, Error: Display>,
+{
+    fn new(bounds: Rect<u32>, size_hint: usize) -> Self {
+        Self {
+            width_u64: bounds.width.get() as u64,
+            offset_x_u64: bounds.x as u64,
+            offset_y_u64: bounds.y as u64,
+            merge_start: 0,
+            merge_end: 0,
+            bounds,
+            excluded: Vec::with_capacity(size_hint),
+            included: Vec::with_capacity(size_hint),
+        }
+    }
+
+    fn add<T>(&mut self, span: Span<T>) -> Result<(), io::Error>
+    where
+        T: Copy + TryInto<u64, Error: Display>,
+    {
+        let global_y: u64 = span.y.try_into().map_err(invalid)?;
+        let local_y = global_y.checked_sub(self.offset_y_u64).ok_or_else(|| {
+            invalid(format!(
+                "span y ({global_y}) is below ROI offset y ({})",
+                self.offset_y_u64
+            ))
+        })?;
+        let global_x_start: u64 = span.x.start.try_into().map_err(invalid)?;
+        let global_x_end: u64 = span.x.end.try_into().map_err(invalid)?;
+        let local_x_start = global_x_start
+            .checked_sub(self.offset_x_u64)
+            .ok_or_else(|| {
+                invalid(format!(
+                    "span x start ({global_x_start}) is below ROI offset x ({})",
+                    self.offset_x_u64
+                ))
+            })?;
+        let local_x_end = global_x_end - self.offset_x_u64;
+
+        let span_offset = local_y * self.width_u64;
+        let start = span_offset + local_x_start;
+        let end = span_offset + local_x_end;
+
+        if self.excluded.is_empty() || start > self.merge_end {
+            if !self.excluded.is_empty() {
+                let included = TIncluded::try_from(self.merge_end - self.merge_start);
+                self.included.push(included.map_err(invalid)?);
+            }
+            let excluded = TExcluded::try_from(start - self.merge_end);
+            self.excluded.push(excluded.map_err(invalid)?);
+            self.merge_start = start;
+            self.merge_end = end;
+        } else if start == self.merge_end {
+            self.merge_end = end;
+        } else {
+            return Err(invalid(format!(
+                "spans must be sorted and non-overlapping: previous end ({}) > next start ({start})",
+                self.merge_end
+            )));
+        }
+        Ok(())
+    }
+
+    fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, io::Error> {
+        if self.excluded.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Requires at least one item",
+            ));
+        }
+        let Self {
+            mut included,
+            excluded,
+            merge_start,
+            merge_end,
+            bounds,
+            ..
+        } = self;
+        included.push(TIncluded::try_from(merge_end - merge_start).map_err(invalid)?);
+        Ok(SortedRanges {
+            included,
+            excluded,
+            bounds,
+        })
+    }
+}
+
+/// Builds a [`SortedRanges`] from spans where [`SortedRangesSpanBuilder::add`] is infallible.
+///
+/// This makes it suitable for use with [`ImaskSet::inspect_always`]: the first error is captured
+/// internally and only surfaced by [`SortedRangesSpanBuilder::build`].
+///
+/// ```
+/// use std::num::NonZeroU32;
+/// use imask::{ImaskSet, Rect, SortedRanges, SortedRangesSpanBuilder, Span};
+///
+/// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
+/// let rect = Rect::new(10, 10, SIZE, SIZE);
+/// let mut builder = SortedRangesSpanBuilder::<u32>::new(rect);
+/// rect.into_spans().inspect_always(|s| builder.add(*s)).next();
+/// let ranges = builder.build().unwrap();
+/// assert_eq!(
+///     SortedRanges::try_from_span_iter(rect.into_spans()).unwrap(),
+///     ranges
+/// );
+/// ```
+pub struct SortedRangesSpanBuilder<TIncluded, TExcluded = TIncluded> {
+    builder: SortedRangesSpanBuilderInternal<TIncluded, TExcluded>,
+    error: Option<io::Error>,
+}
+
+impl<TIncluded, TExcluded> SortedRangesSpanBuilder<TIncluded, TExcluded>
+where
+    TIncluded: TryFrom<u64, Error: Display>,
+    TExcluded: TryFrom<u64, Error: Display>,
+{
+    pub fn new(bounds: Rect<u32>) -> Self {
+        Self {
+            builder: SortedRangesSpanBuilderInternal::new(bounds, 0),
+            error: None,
+        }
+    }
+
+    pub fn add<T: Copy + TryInto<u64, Error: Display>>(&mut self, span: Span<T>) {
+        if self.error.is_none() {
+            self.error = self.builder.add(span).err();
+        }
+    }
+
+    pub fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, io::Error> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        self.builder.build()
+    }
 }
 
 impl<T: SignedNonZeroable + UncheckedCast<u32> + Sub<Output = T>> From<Span<T>>
@@ -394,74 +549,13 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             bounds.width,
             "width() must equal bounds().width"
         );
-        let width_u64: u64 = iter.width().get() as u64;
-        let offset_x_u64: u64 = bounds.x as u64;
-        let offset_y_u64: u64 = bounds.y as u64;
-
-        let mut local_iter = iter.map(|span| {
-            let global_y: u64 = span.y.try_into().map_err(invalid_data)?;
-            let local_y = global_y.checked_sub(offset_y_u64).ok_or_else(|| {
-                invalid_data(format!(
-                    "span y ({global_y}) is below ROI offset y ({offset_y_u64})"
-                ))
-            })?;
-            let global_x_start: u64 = span.x.start.try_into().map_err(invalid_data)?;
-            let global_x_end: u64 = span.x.end.try_into().map_err(invalid_data)?;
-            let local_x_start = global_x_start.checked_sub(offset_x_u64).ok_or_else(|| {
-                invalid_data(format!(
-                    "span x start ({global_x_start}) is below ROI offset x ({offset_x_u64})"
-                ))
-            })?;
-            let local_x_end = global_x_end - offset_x_u64;
-
-            std::io::Result::Ok(Span::new(
-                NonZeroRange::new_debug_checked_zeroable(local_x_start, local_x_end),
-                local_y,
-            ))
-        });
-
-        let Some(first) = local_iter.next().transpose()? else {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "Requires at least one item",
-            ));
-        };
-
-        let first_offset = first.y * width_u64;
-        let mut merge_start: u64 = first_offset + first.x.start;
-        let mut merge_end: u64 = first_offset + first.x.end;
-
-        let mut excluded: Vec<TExcluded> =
-            vec![TExcluded::try_from(merge_start).map_err(invalid_data)?];
-        let mut included: Vec<TIncluded> = Vec::with_capacity(local_iter.size_hint().0 + 1);
-
-        for span in local_iter {
-            let span = span?;
-            let span_offset = span.y * width_u64;
-            let start = span_offset + span.x.start;
-            let end = span_offset + span.x.end;
-
-            if start == merge_end {
-                merge_end = end;
-            } else {
-                if start < merge_end {
-                    return Err(invalid_data(format!(
-                        "spans must be sorted and non-overlapping: previous end ({merge_end}) > next start ({start})"
-                    )));
-                }
-                included.push(TIncluded::try_from(merge_end - merge_start).map_err(invalid_data)?);
-                excluded.push(TExcluded::try_from(start - merge_end).map_err(invalid_data)?);
-                merge_start = start;
-                merge_end = end;
-            }
+        let size_hint = iter.size_hint().0;
+        let mut builder =
+            SortedRangesSpanBuilderInternal::<TIncluded, TExcluded>::new(bounds, size_hint);
+        for span in iter {
+            builder.add(span)?;
         }
-        included.push(TIncluded::try_from(merge_end - merge_start).map_err(invalid_data)?);
-
-        Ok(Self {
-            included,
-            excluded,
-            bounds,
-        })
+        builder.build()
     }
 
     #[cfg(feature = "async-io")]
