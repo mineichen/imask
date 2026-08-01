@@ -7,6 +7,7 @@ use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, 
 
 mod affine_transform;
 mod clip;
+mod cluster;
 mod dilate;
 mod from_bitmap;
 mod from_bitmap_range;
@@ -21,6 +22,7 @@ mod union_all;
 
 pub use affine_transform::*;
 pub use clip::*;
+pub use cluster::*;
 pub use dilate::*;
 pub use from_bitmap::*;
 pub use from_bitmap_range::*;

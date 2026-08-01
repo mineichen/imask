@@ -37,6 +37,9 @@ impl<I: Iterator> Peekable<I> {
     pub(crate) fn size_hint_total(&self) -> (usize, Option<usize>) {
         let (lo, hi) = self.parent.size_hint();
         let extra = self.pending.is_some() as usize;
-        (lo.saturating_add(extra), hi.map(|h| h.saturating_add(extra)))
+        (
+            lo.saturating_add(extra),
+            hi.map(|h| h.saturating_add(extra)),
+        )
     }
 }

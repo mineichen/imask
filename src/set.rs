@@ -115,6 +115,20 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::UnionAll::new(self)
     }
 
+    fn cluster<T>(self) -> crate::span::ClusterSpanIter<Self::IntoIter, T>
+    where
+        Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension + std::iter::FusedIterator,
+        T: Ord
+            + Copy
+            + std::fmt::Debug
+            + std::ops::Add<Output = T>
+            + std::ops::Sub<Output = T>
+            + num_traits::One
+            + UncheckedCast<u32>,
+    {
+        crate::span::ClusterSpanIter::new(self.into_iter())
+    }
+
     fn clip<T>(self, roi: Rect<u32>) -> ClipSpanIter<Self::IntoIter, T>
     where
         Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
