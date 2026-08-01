@@ -4,7 +4,7 @@ use std::num::NonZero;
 
 use nalgebra::{Matrix3, Vector3};
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, PipelineError, Rect, Span};
 
 fn transform_point(m: &Matrix3<f64>, x: f64, y: f64) -> (f64, f64) {
     let v = m * Vector3::new(x, y, 1.0);
@@ -288,9 +288,9 @@ impl AffineTransformHeap {
     pub fn new<I: Iterator<Item = Span<u32>> + ImageDimension>(
         spans: I,
         matrix: &Matrix3<f64>,
-    ) -> Option<Self> {
+    ) -> Result<Self, PipelineError> {
         let parent_bounds = spans.bounds();
-        let bounds = transform_bounds_rect(parent_bounds, matrix)?;
+        let bounds = transform_bounds_rect(parent_bounds, matrix).ok_or(PipelineError::Empty)?;
 
         let mut entries: Vec<HeapEntry> = Vec::new();
         for span in spans {
@@ -305,7 +305,7 @@ impl AffineTransformHeap {
             }
         }
 
-        Some(Self {
+        Ok(Self {
             heap: BinaryHeap::from(entries),
             bounds,
             pending: None,
@@ -441,11 +441,14 @@ mod tests {
     }
 
     #[test]
-    fn translate_completely_negative_returns_none() {
+    fn translate_completely_negative_returns_empty() {
         let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
-        assert!(AffineTransformHeap::new(spans, &matrix).is_none());
+        assert!(matches!(
+            AffineTransformHeap::new(spans, &matrix),
+            Err(PipelineError::Empty)
+        ));
     }
 
     #[test]

@@ -2,14 +2,14 @@ use std::{
     cmp::Ord,
     fmt::{Debug, Display},
     io,
-    num::{NonZero, NonZeroU32},
+    num::{IntErrorKind, NonZero, NonZeroU32},
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
 use crate::visualize_iter::IterVisualizer;
 use crate::{
-    CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
-    UncheckedCast, WithBounds, WithRoi,
+    CreateRange, ImageDimension, IncompatibleSizeError, NonZeroRange, PipelineError, Rect,
+    SignedNonZeroable, SortedRangesSpanIter, Span, UncheckedCast, WithBounds, WithRoi,
     span::{ClipSpanIter, InspectAlwaysSpanIter},
 };
 
@@ -106,7 +106,7 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::Intersect::new(self.into_iter(), other.into_iter())
     }
 
-    fn union_all<T>(self) -> Option<crate::span::UnionAll<Self::Item>>
+    fn union_all<T>(self) -> Result<crate::span::UnionAll<Self::Item>, PipelineError>
     where
         Self: ImageDimension,
         T: Ord + Copy + std::fmt::Debug,
@@ -155,7 +155,7 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn dilate<T>(
         self,
         offset: <T as SignedNonZeroable>::NonZero,
-    ) -> Option<crate::span::DilateSpanIter<Self::IntoIter, T>>
+    ) -> Result<crate::span::DilateSpanIter<Self::IntoIter, T>, PipelineError>
     where
         T: Ord
             + Copy
@@ -338,8 +338,10 @@ struct SortedRangesSpanBuilderInternal<TIncluded, TExcluded> {
 
 impl<TIncluded, TExcluded> SortedRangesSpanBuilderInternal<TIncluded, TExcluded>
 where
-    TIncluded: TryFrom<u64, Error: Display>,
-    TExcluded: TryFrom<u64, Error: Display>,
+    TIncluded: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
+    IncompatibleSizeError: From<TExcluded::Error>,
+    TExcluded: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
+    IncompatibleSizeError: From<TIncluded::Error>,
 {
     fn new(bounds: Rect<u32>, size_hint: usize) -> Self {
         Self {
@@ -354,28 +356,26 @@ where
         }
     }
 
-    fn add<T>(&mut self, span: Span<T>) -> Result<(), io::Error>
+    fn add<T>(&mut self, span: Span<T>) -> Result<(), IncompatibleSizeError>
     where
-        T: Copy + TryInto<u64, Error: Display>,
+        T: Copy + TryInto<u64>,
+        IncompatibleSizeError: From<T::Error>,
     {
-        let global_y: u64 = span.y.try_into().map_err(invalid)?;
-        let local_y = global_y.checked_sub(self.offset_y_u64).ok_or_else(|| {
-            invalid(format!(
-                "span y ({global_y}) is below ROI offset y ({})",
-                self.offset_y_u64
-            ))
-        })?;
-        let global_x_start: u64 = span.x.start.try_into().map_err(invalid)?;
-        let global_x_end: u64 = span.x.end.try_into().map_err(invalid)?;
+        let global_y: u64 = span.y.try_into()?;
+        // Spans are expected to always stay within the declared bounds
+        // (ImageDimension). A span below the ROI offset violates that invariant
+        // and is therefore a programmer error.
+        let local_y = global_y
+            .checked_sub(self.offset_y_u64)
+            .ok_or(IntErrorKind::NegOverflow)?;
+        let global_x_start: u64 = span.x.start.try_into()?;
+        let global_x_end: u64 = span.x.end.try_into()?;
         let local_x_start = global_x_start
             .checked_sub(self.offset_x_u64)
-            .ok_or_else(|| {
-                invalid(format!(
-                    "span x start ({global_x_start}) is below ROI offset x ({})",
-                    self.offset_x_u64
-                ))
-            })?;
-        let local_x_end = global_x_end - self.offset_x_u64;
+            .ok_or(IntErrorKind::NegOverflow)?;
+        let local_x_end = global_x_end
+            .checked_sub(self.offset_x_u64)
+            .ok_or(IntErrorKind::NegOverflow)?;
 
         let span_offset = local_y * self.width_u64;
         let start = span_offset + local_x_start;
@@ -384,29 +384,25 @@ where
         if self.excluded.is_empty() || start > self.merge_end {
             if !self.excluded.is_empty() {
                 let included = TIncluded::try_from(self.merge_end - self.merge_start);
-                self.included.push(included.map_err(invalid)?);
+                self.included.push(included?);
             }
             let excluded = TExcluded::try_from(start - self.merge_end);
-            self.excluded.push(excluded.map_err(invalid)?);
+            self.excluded.push(excluded?);
             self.merge_start = start;
             self.merge_end = end;
         } else if start == self.merge_end {
             self.merge_end = end;
         } else {
-            return Err(invalid(format!(
-                "spans must be sorted and non-overlapping: previous end ({}) > next start ({start})",
-                self.merge_end
-            )));
+            // start < merge_end (and excluded not empty): overlap violates the
+            // sorted & disjoint contract span iterators promise → programmer error.
+            return Err(IntErrorKind::NegOverflow.into());
         }
         Ok(())
     }
 
-    fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, io::Error> {
+    fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, PipelineError> {
         if self.excluded.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "Requires at least one item",
-            ));
+            return Err(PipelineError::Empty);
         }
         let Self {
             mut included,
@@ -416,7 +412,8 @@ where
             bounds,
             ..
         } = self;
-        included.push(TIncluded::try_from(merge_end - merge_start).map_err(invalid)?);
+        let include = TIncluded::try_from(merge_end - merge_start);
+        included.push(include.map_err(IncompatibleSizeError::from)?);
         Ok(SortedRanges {
             included,
             excluded,
@@ -446,13 +443,15 @@ where
 /// ```
 pub struct SortedRangesSpanBuilder<TIncluded, TExcluded = TIncluded> {
     builder: SortedRangesSpanBuilderInternal<TIncluded, TExcluded>,
-    error: Option<io::Error>,
+    error: Option<IncompatibleSizeError>,
 }
 
 impl<TIncluded, TExcluded> SortedRangesSpanBuilder<TIncluded, TExcluded>
 where
-    TIncluded: TryFrom<u64, Error: Display>,
-    TExcluded: TryFrom<u64, Error: Display>,
+    TIncluded: TryFrom<u64>,
+    IncompatibleSizeError: From<TIncluded::Error>,
+    TExcluded: TryFrom<u64>,
+    IncompatibleSizeError: From<TExcluded::Error>,
 {
     pub fn new(bounds: Rect<u32>) -> Self {
         Self {
@@ -461,15 +460,18 @@ where
         }
     }
 
-    pub fn add<T: Copy + TryInto<u64, Error: Display>>(&mut self, span: Span<T>) {
+    pub fn add<T: Copy + TryInto<u64>>(&mut self, span: Span<T>)
+    where
+        IncompatibleSizeError: From<T::Error>,
+    {
         if self.error.is_none() {
             self.error = self.builder.add(span).err();
         }
     }
 
-    pub fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, io::Error> {
+    pub fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, PipelineError> {
         if let Some(error) = self.error {
-            return Err(error);
+            return Err(error.into());
         }
         self.builder.build()
     }
@@ -535,12 +537,15 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     {
         Self::try_from_ordered_iter(iter.with_roi(bounds))
     }
-    pub fn try_from_span_iter<TIter, T>(iter: TIter) -> Result<Self, io::Error>
+    pub fn try_from_span_iter<TIter, T>(iter: TIter) -> Result<Self, PipelineError>
     where
         TIter: IntoIterator<Item = Span<T>, IntoIter: ImageDimension>,
-        T: Copy + TryInto<u64, Error: Display>,
+        T: Copy + TryInto<u64>,
         TIncluded: TryFrom<u64, Error: Display>,
         TExcluded: TryFrom<u64, Error: Display>,
+        IncompatibleSizeError: From<T::Error>,
+        IncompatibleSizeError: From<TIncluded::Error>,
+        IncompatibleSizeError: From<TExcluded::Error>,
     {
         let iter = iter.into_iter();
         let bounds = iter.bounds();
@@ -1033,23 +1038,24 @@ mod tests {
     }
 
     #[test]
-    fn try_from_span_iter_empty_returns_error() {
+    fn try_from_span_iter_empty_returns_empty_error() {
         let spans: Vec<Span<u32>> = vec![];
         let result = SortedRanges::<u32>::try_from_span_iter(
             spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
         );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("at least one"));
+        assert!(matches!(result, Err(PipelineError::Empty)));
     }
 
     #[test]
-    fn try_from_span_iter_overlapping_returns_error() {
+    fn try_from_span_iter_overlapping_panics() {
         let spans = vec![Span::new(0u32..500, 0u32), Span::new(0u32..500, 0u32)];
         let result = SortedRanges::<u64>::try_from_span_iter(
             spans.with_bounds(TEST_BOUNDS.width, TEST_BOUNDS.height),
         );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("non-overlapping"));
+        assert_eq!(
+            result.unwrap_err(),
+            PipelineError::from(IntErrorKind::NegOverflow)
+        );
     }
 
     #[test]

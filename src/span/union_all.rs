@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::collections::binary_heap::PeekMut;
 use std::fmt::Debug;
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, PipelineError, Rect, Span};
 
 pub struct UnionAll<I: Iterator> {
     heap: BinaryHeap<PendingIter<I>>,
@@ -12,7 +12,7 @@ pub struct UnionAll<I: Iterator> {
 }
 
 impl<I: Iterator<Item: Ord>> UnionAll<I> {
-    pub fn new(iters: impl IntoIterator<Item = I> + ImageDimension) -> Option<Self> {
+    pub fn new(iters: impl IntoIterator<Item = I> + ImageDimension) -> Result<Self, PipelineError> {
         let roi = iters.bounds();
         let mut iters = iters.into_iter().filter_map(|mut iter| {
             let pending = iter.next()?;
@@ -22,15 +22,13 @@ impl<I: Iterator<Item: Ord>> UnionAll<I> {
             })
         });
         let mut heap = BinaryHeap::with_capacity(iters.size_hint().0);
-        let first = iters.next()?;
-        // let mut roi = first.iter.bounds();
+        let first = iters.next().ok_or(PipelineError::Empty)?;
         heap.push(first);
         for pending in iters {
-            // roi = pending.iter.bounds().bounds(&roi);
             heap.push(pending);
         }
 
-        Some(Self {
+        Ok(Self {
             heap,
             accumulator: None,
             roi,
@@ -156,7 +154,7 @@ mod tests {
     fn empty() {
         let result =
             UnionAll::new(std::iter::empty::<std::vec::IntoIter<Span<u16>>>().with_roi(BOUNDS));
-        assert!(result.is_none());
+        assert!(matches!(result, Err(PipelineError::Empty)));
     }
 
     #[test]

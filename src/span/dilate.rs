@@ -1,11 +1,12 @@
+use std::num::IntErrorKind;
 use std::ops::Add;
 use std::{fmt::Debug, num::NonZeroU32};
 
 use num_traits::{One, SaturatingSub, Zero};
 
 use crate::{
-    CheckedAddSigned, CreateRange, ImageDimension, ImaskSet, NonZeroRange, Rect, SignedNonZeroable,
-    Span, UncheckedCast,
+    CheckedAddSigned, CreateRange, ImageDimension, ImaskSet, IncompatibleSizeError, NonZeroRange,
+    PipelineError, Rect, SignedNonZeroable, Span, UncheckedCast,
 };
 
 use super::union_all::UnionAll;
@@ -34,7 +35,7 @@ where
         + SignedNonZeroable
         + UncheckedCast<u32>,
 {
-    pub fn new(iter: I, offset: T::NonZero) -> Option<Self> {
+    pub fn new(iter: I, offset: T::NonZero) -> Result<Self, PipelineError> {
         let bounds = iter.bounds();
         let x_offset: T = offset.into();
         let y_offset: T = offset.into();
@@ -61,23 +62,23 @@ where
                 y_shift_unsigned: y_offset + y_delta,
             });
         }
-        fn calculate_bound_dim(start: u32, len: NonZeroU32, offset: u32) -> (u32, NonZeroU32) {
-            if start >= offset {
-                (
-                    start - offset,
-                    NonZeroU32::new(len.get() + 2 * offset).unwrap(),
-                )
+        fn calculate_bound_dim(
+            start: u32,
+            len: NonZeroU32,
+            offset: u32,
+        ) -> Result<(u32, NonZeroU32), IncompatibleSizeError> {
+            Ok(if start >= offset {
+                let end = NonZeroU32::new(len.get() + 2 * offset);
+                (start - offset, end.ok_or(IntErrorKind::PosOverflow)?)
             } else {
-                (
-                    0,
-                    NonZeroU32::new(len.get() + offset + offset - start).unwrap(),
-                )
-            }
+                let end = NonZeroU32::new(len.get() + offset + offset - start);
+                (0, end.ok_or(IntErrorKind::PosOverflow)?)
+            })
         }
-        let (x, width) = calculate_bound_dim(bounds.x, bounds.width, x_offset.cast_unchecked());
-        let (y, height) = calculate_bound_dim(bounds.y, bounds.height, y_offset.cast_unchecked());
+        let (x, width) = calculate_bound_dim(bounds.x, bounds.width, x_offset.cast_unchecked())?;
+        let (y, height) = calculate_bound_dim(bounds.y, bounds.height, y_offset.cast_unchecked())?;
 
-        Some(Self {
+        Ok(Self {
             inner: UnionAll::new(iters.with_roi(Rect::new(x, y, width, height)))?,
             offset: y_offset,
             bounds: Rect::new(x, y, width, height),
