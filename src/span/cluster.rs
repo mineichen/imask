@@ -75,26 +75,36 @@ where
             // (small into big), reusing `merge_cache` as scratch. No per-span
             // heap allocation: the only owned storage is the cluster's own
             // `spans` buffer, grown in place.
-            let mut acc: Option<Cluster<T>> = None;
-            let mut i = 0;
-            while i < self.pending.len() {
-                if self.pending[i].connects_to(span) {
-                    let c = self.pending.remove(i).expect("i in range");
+
+            let mut acc: Option<usize> = None;
+            let mut i_read = 0;
+            let mut i_write = 0;
+            let len = self.pending.len();
+            while i_read < len {
+                let c = &mut self.pending[i_read];
+                let write_change = if c.connects_to(span) {
                     // Fold `c` into the accumulator (small into big), moving the
                     // accumulator out and back to sidestep the borrow checker.
-                    acc = Some(if let Some(mut existing) = acc {
-                        Cluster::merge_into(&mut existing, c, &mut self.merge_cache);
-                        existing
+                    if let Some(idx) = acc {
+                        let taken = c.take();
+                        Cluster::merge_into(&mut self.pending[idx], taken, &mut self.merge_cache);
+                        0
                     } else {
-                        c
-                    });
+                        acc = Some(i_write);
+                        1
+                    }
                 } else {
-                    i += 1;
-                }
+                    1
+                };
+                self.pending.swap(i_write, i_read);
+                i_write += write_change;
+                i_read += 1;
             }
+            self.pending.truncate(i_write);
 
-            let cluster = match acc {
-                Some(mut big) => {
+            match acc {
+                Some(big_idx) => {
+                    let big = &mut self.pending[big_idx];
                     big.add(span);
                     debug_assert_eq!(
                         big.check_idx,
@@ -103,15 +113,13 @@ where
                                 || (s.y + T::one() == span.y && s.x.end < span.x.start)
                         })
                     );
-                    big
                 }
-                None => Cluster::from_span(span),
+                None => self.pending.push_back(Cluster::from_span(span)),
             };
             // Skip the part of the frontier that is already final so it is never
             // reconsidered: spans in rows above `span.y - 1`, as well as frontier
             // spans already passed by `span` (and therefore by any future, even
             // further-right span).
-            self.pending.push_back(cluster);
             maybe_span = self.parent.next();
         }
 
@@ -173,6 +181,18 @@ where
             max_x: span.x.end,
             min_y: span.y,
             check_idx: 0,
+        }
+    }
+
+    fn take(&mut self) -> Self {
+        let mut spans = Vec::new();
+        core::mem::swap(&mut spans, &mut self.spans);
+        Self {
+            spans,
+            min_x: self.min_x,
+            max_x: self.max_x,
+            min_y: self.min_y,
+            check_idx: self.check_idx,
         }
     }
 
