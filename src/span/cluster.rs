@@ -107,60 +107,10 @@ where
                     return Some(r.into_group());
                 }
             }
-
-            // let (pending_a, pending_b) = self.pending.as_mut_slices(); //.skip(maybe_unfinished_idx);
-            // let mut create_pending = pending_a.iter_mut().chain(pending_b.iter_mut());
-            // let mut pending_iter = create_pending;
-            // let Some(p) = pending_iter.next() else {
-            //     break;
-            // };
-
-            // Try to merge span
-            // - If all pending are inside of span, we can return this block
-            // - If some, but not all are inside of span, we add span, increment check_idx and and swap it until self.pending is sorted again
-            // - If Nothing is inside, Create a new pending
-            //next_inside(p, create_pending(), span);
-            // while let Some(ps) = p.spans.get(p.check_idx) {
-            //     let occurs_after = span.x.start + T::one() <= ps.x.end;
-            //     let rename_plz_could_be_merged = span.y == ps.y || occurs_after;
-            //     if rename_plz_could_be_merged {
-            //         if occurs_after && span.y + T::one() == ps.y {
-            //             let mut res = self.pending.pop_front()?;
-            //             res.add(span);
-            //             let mut i = 0;
-            //             while let Some(x) = self.pending.get_mut(i)
-            //                 && x.check_span().y < T::one()
-            //             {}
-
-            //             // Find others with overlap and return
-            //             return Some(res.into_group());
-            //         } else if let Some(np) = pending_iter.next()
-            //             && np.check_span().y < T::one()
-            //         {
-            //             core::mem::swap(p, np);
-            //             while let Some(x) = pending_iter.next()
-            //                 && x.check_span().y < T::one()
-            //             {
-            //                 core::mem::swap(np, x);
-            //             }
-            //             continue 'outer;
-            //         } else {
-            //             // inside or first
-            //             todo!("OUt of bouds??");
-            //             p.check_idx += 1;
-            //         }
-            //     }
-            // }
-            // // All pending pos are finished (VecDeque::remove minimizes elements to be moved (front/back))
-            // return Some(self.pending.pop_front()?.into_group());
-
-            // If none of the
-            // self.pending.push_back(Cluster::from_span(span));
         }
     }
 }
-
-/// Gets the first cluster, which might be merged with span
+// Gets the first cluster, which might be merged with span
 /// To do so, it can increase Cluster::check_idx if there are more and items and fix the ordering within data
 /// Errors if
 /// - there are no items in data (Err(None))
@@ -189,215 +139,12 @@ where
     }
 }
 
-fn next_inside<'a, 'b, T: 'b>(
-    p: &'a mut Cluster<T>,
-    rest: impl Iterator<Item = &'b mut Cluster<T>>,
-    span: Span<T>,
-) {
-    //if p.c
-}
-
-// fn get_with_rest<T>(
-//     d: &mut VecDeque<T>,
-//     pos: usize,
-// ) -> Option<(&mut T, impl Iterator<Item = &'_ mut T>)> {
-//     None as Option<(_, std::iter::Empty<_>)>
-// }
-
 impl<I, T> FusedIterator for ClusterSpanIter<I, T>
 where
     I: Iterator<Item = Span<T>> + FusedIterator,
     T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
 {
 }
-
-// impl<I, T> ClusterSpanIter<I, T>
-// where
-//     I: Iterator<Item = Span<T>>,
-//     T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
-// {
-//     fn take_next_related(&mut self, span: Span<T>) -> Option<Cluster<T>> {
-//         None
-//     }
-// }
-//     /// Pop clusters from the front that can no longer be connected to `span`
-//     /// (or any later span) and move them to the yield queue.
-//     fn close_done(&mut self, span: Span<T>) {
-//         while let Some((_, cluster)) = self.pending.front() {
-//             let last = cluster.spans.last().expect("clusters are never empty");
-//             let done = if last.y < span.y {
-//                 if last.y + T::one() < span.y {
-//                     // row gap
-//                     true
-//                 } else {
-//                     // last.y == span.y - 1: yield once we are horizontally past
-//                     span.x.start > last.x.end
-//                 }
-//             } else {
-//                 // last.y == span.y (already matched this row): cannot be done yet
-//                 false
-//             };
-//             if done {
-//                 let (_, cluster) = self.pending.pop_front().expect("front checked");
-//                 self.closed.push_back(cluster);
-//             } else {
-//                 break;
-//             }
-//         }
-//     }
-
-//     /// On a row transition, point each cursor at the first span of the new
-//     /// frontier row and re-sort the deque by that span's `x.start`.
-//     fn reset_and_sort(&mut self, frontier_row: T) {
-//         for (cursor, cluster) in self.pending.iter_mut() {
-//             *cursor = cluster.spans.partition_point(|s| s.y < frontier_row);
-//         }
-//         let mut v: Vec<(usize, Cluster<T>)> = self.pending.drain(..).collect();
-//         v.sort_by(|a, b| {
-//             match (
-//                 a.1.frontier_span(a.0, frontier_row),
-//                 b.1.frontier_span(b.0, frontier_row),
-//             ) {
-//                 (Some(fa), Some(fb)) => fa.x.start.cmp(&fb.x.start),
-//                 (Some(_), None) => std::cmp::Ordering::Less,
-//                 (None, Some(_)) => std::cmp::Ordering::Greater,
-//                 (None, None) => std::cmp::Ordering::Equal,
-//             }
-//         });
-//         self.pending.extend(v);
-//     }
-
-//     fn match_and_resolve(&mut self, span: Span<T>) {
-//         // No previous-row frontier can match when there is no pending cluster or
-//         // we are still in row 0 (span.y == 0 ⇒ no row -1): start a new cluster.
-//         if self.pending.is_empty() || span.y < T::one() {
-//             let cluster = Cluster::from_span(span);
-//             self.pending.push_back((0, cluster));
-//             return;
-//         }
-//         // pending non-empty and span.y >= 1 ⇒ subtraction is safe.
-//         let frontier_row = span.y - T::one();
-//         let mut matches: Vec<Cluster<T>> = Vec::new();
-
-//         loop {
-//             let action = match self.pending.front() {
-//                 None => break,
-//                 Some((cursor, cluster)) => match cluster.frontier_span(*cursor, frontier_row) {
-//                     None => break, // retired cluster at front ⇒ no more matches for `span`
-//                     Some(f) => {
-//                         if f.x.end < span.x.start {
-//                             Action::Advance
-//                         } else if f.x.start <= span.x.end {
-//                             Action::Match
-//                         } else {
-//                             break; // frontier is right of `span` ⇒ we are done
-//                         }
-//                     }
-//                 },
-//             };
-//             match action {
-//                 Action::Advance => {
-//                     let (cursor, cluster) = self.pending.pop_front().expect("front checked");
-//                     let new_cursor = cursor + 1;
-//                     if cluster.frontier_span(new_cursor, frontier_row).is_some() {
-//                         // more frontier to check: reinsert at sorted position
-//                         self.insert_sorted(frontier_row, (new_cursor, cluster));
-//                     } else {
-//                         // frontier exhausted: retire to the back
-//                         self.pending.push_back((new_cursor, cluster));
-//                     }
-//                 }
-//                 Action::Match => {
-//                     let (_, cluster) = self.pending.pop_front().expect("front checked");
-//                     matches.push(cluster);
-//                 }
-//             }
-//         }
-
-//         if matches.is_empty() {
-//             let cluster = Cluster::from_span(span);
-//             self.pending.push_back((0, cluster));
-//         } else {
-//             let merged = resolve_matches(matches, span, &mut self.merge_cache);
-//             // Keep the cursor at the first frontier span that is not yet passed
-//             // (one with x.end >= span.x.start). A wide frontier span can match
-//             // several same-row spans, so we must NOT advance past it here.
-//             let cursor = first_frontier_end_ge(&merged.spans, frontier_row, span.x.start);
-//             let item = (cursor, merged);
-//             if item.1.frontier_span(cursor, frontier_row).is_some() {
-//                 self.insert_sorted(frontier_row, item);
-//             } else {
-//                 self.pending.push_back(item);
-//             }
-//         }
-//     }
-
-//     /// Insert `item` (always an active cluster) keeping the deque sorted ascending
-//     /// by the frontier span at its cursor. Done via `push_front` then adjacent
-//     /// swaps toward the back. Retired clusters (no frontier span) are treated as
-//     /// `+∞` and stay at the back, so the item never crosses them.
-//     fn insert_sorted(&mut self, frontier_row: T, item: (usize, Cluster<T>)) {
-//         let my_start = item
-//             .1
-//             .frontier_span(item.0, frontier_row)
-//             .map(|f| f.x.start)
-//             .expect("insert_sorted only takes active clusters");
-//         self.pending.push_front(item);
-//         let mut i = 0;
-//         while i + 1 < self.pending.len() {
-//             let next_active = self.pending[i + 1]
-//                 .1
-//                 .frontier_span(self.pending[i + 1].0, frontier_row);
-//             match next_active {
-//                 Some(nf) if my_start > nf.x.start => {
-//                     self.pending.swap(i, i + 1);
-//                     i += 1;
-//                 }
-//                 _ => break,
-//             }
-//         }
-//     }
-// }
-
-enum Action {
-    Advance,
-    Match,
-}
-
-/// First index `>= start-of-frontier` whose frontier span has `x.end >= threshold`,
-/// or the index just past the frontier if none. Frontier spans with
-/// `x.end < threshold` are entirely left of `threshold` and thus passed: they
-/// cannot match `span` or any later (further-right) same-row span.
-fn first_frontier_end_ge<T: Copy + Ord>(spans: &[Span<T>], frontier_row: T, threshold: T) -> usize {
-    let start = spans.partition_point(|s| s.y < frontier_row);
-    let mut i = start;
-    while i < spans.len() && spans[i].y == frontier_row && spans[i].x.end < threshold {
-        i += 1;
-    }
-    i
-}
-
-// fn resolve_matches<T>(
-//     mut matches: Vec<Cluster<T>>,
-//     span: Span<T>,
-//     cache: &mut Vec<Span<T>>,
-// ) -> Cluster<T>
-// where
-//     T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
-// {
-//     let big_idx = matches
-//         .iter()
-//         .enumerate()
-//         .max_by_key(|(_, c)| c.spans.len())
-//         .map(|(i, _)| i)
-//         .expect("at least one match");
-//     let mut big = matches.swap_remove(big_idx);
-//     for small in matches {
-//         Cluster::merge_into(&mut big, small, cache);
-//     }
-//     big.add(span);
-//     big
-// }
 
 /// A group of neighbouring spans. Implements [`ImageDimension`] (tight bounding
 /// box of its spans; `width() == bounds().width`) and drains its spans via
@@ -457,20 +204,6 @@ where
     fn might_current_be_merged(&self, next: Span<T>) -> bool {
         let prev = self.check_span();
         next.y == prev.y + T::one() && next.x.start > prev.x.start
-    }
-
-    // fn could_exist_after(&self, cur: Span<T>) -> bool {
-    //     let latest = self.spans[self.check_idx];
-    //     span.y - i.y > T::one() || span.x > {}
-    // }
-
-    /// The frontier span at `cursor`, or `None` if `cursor` is out of bounds or
-    /// points at a span not in `frontier_row`.
-    fn frontier_span(&self, cursor: usize, frontier_row: T) -> Option<Span<T>> {
-        self.spans
-            .get(cursor)
-            .filter(|s| s.y == frontier_row)
-            .copied()
     }
 
     /// `span` is the most recently pulled input span, i.e. it is `>=` every span
