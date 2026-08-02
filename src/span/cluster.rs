@@ -70,7 +70,18 @@ where
     fn next(&mut self) -> Option<SpanCluster<T>> {
         let mut maybe_span = self.pending_item.take().or_else(|| self.parent.next());
         while let Some(span) = maybe_span {
-            match connects_to(&mut self.pending, span) {
+            let connects = connects_to(&mut self.pending, span);
+            #[cfg(debug_assertions)]
+            {
+                let mut iter = self.pending.iter().map(|x| x.spans[x.check_idx]);
+                if let Some(x) = iter.next() {
+                    iter.fold(x, |before, next| {
+                        assert!(before < next);
+                        next
+                    });
+                }
+            }
+            match connects {
                 Ok(0) => {
                     self.pending.push_back(Cluster::from_span(span));
                 }
