@@ -82,9 +82,9 @@ where
                     let c = self.pending.remove(i).expect("i in range");
                     // Fold `c` into the accumulator (small into big), moving the
                     // accumulator out and back to sidestep the borrow checker.
-                    acc = Some(if let Some(mut big) = acc {
-                        Cluster::merge_into(&mut big, c, &mut self.merge_cache);
-                        big
+                    acc = Some(if let Some(mut existing) = acc {
+                        Cluster::merge_into(&mut existing, c, &mut self.merge_cache);
+                        existing
                     } else {
                         c
                     });
@@ -93,9 +93,16 @@ where
                 }
             }
 
-            let mut big = match acc {
+            let cluster = match acc {
                 Some(mut big) => {
                     big.add(span);
+                    debug_assert_eq!(
+                        big.check_idx,
+                        big.spans.partition_point(|s| {
+                            s.y + T::one() < span.y
+                                || (s.y + T::one() == span.y && s.x.end < span.x.start)
+                        })
+                    );
                     big
                 }
                 None => Cluster::from_span(span),
@@ -104,10 +111,7 @@ where
             // reconsidered: spans in rows above `span.y - 1`, as well as frontier
             // spans already passed by `span` (and therefore by any future, even
             // further-right span).
-            big.check_idx = big.spans.partition_point(|s| {
-                s.y + T::one() < span.y || (s.y + T::one() == span.y && s.x.end < span.x.start)
-            });
-            self.pending.push_back(big);
+            self.pending.push_back(cluster);
             maybe_span = self.parent.next();
         }
 
@@ -211,6 +215,7 @@ where
         if src.min_y < target.min_y {
             std::mem::swap(target, &mut src);
         }
+        let new_check_idx = target.check_idx + src.check_idx;
 
         target.min_x = target.min_x.min(src.min_x);
         target.max_x = target.max_x.max(src.max_x);
@@ -238,6 +243,7 @@ where
         }
         target.spans.extend_from_slice(&src.spans[si..]);
         target.spans.extend_from_slice(&cache[ci..]);
+        target.check_idx = new_check_idx;
         cache.clear();
     }
 
