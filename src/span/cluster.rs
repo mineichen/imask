@@ -70,56 +70,26 @@ where
     fn next(&mut self) -> Option<SpanCluster<T>> {
         let mut maybe_span = self.pending_item.take().or_else(|| self.parent.next());
         while let Some(span) = maybe_span {
-            // Merge every pending cluster whose previous-row frontier touches
-            // `span` (8-connectivity) into a single stack-local accumulator
-            // (small into big), reusing `merge_cache` as scratch. No per-span
-            // heap allocation: the only owned storage is the cluster's own
-            // `spans` buffer, grown in place.
-
-            let mut acc: Option<usize> = None;
-            let mut i_read = 0;
-            let mut i_write = 0;
-            let len = self.pending.len();
-            while i_read < len {
-                let c = &mut self.pending[i_read];
-                let write_change = if c.connects_to(span) {
-                    // Fold `c` into the accumulator (small into big), moving the
-                    // accumulator out and back to sidestep the borrow checker.
-                    if let Some(idx) = acc {
-                        let taken = c.take();
-                        Cluster::merge_into(&mut self.pending[idx], taken, &mut self.merge_cache);
-                        0
-                    } else {
-                        acc = Some(i_write);
-                        1
-                    }
-                } else {
-                    1
-                };
-                self.pending.swap(i_write, i_read);
-                i_write += write_change;
-                i_read += 1;
-            }
-            self.pending.truncate(i_write);
-
-            match acc {
-                Some(big_idx) => {
-                    let big = &mut self.pending[big_idx];
-                    big.add(span);
-                    debug_assert_eq!(
-                        big.check_idx,
-                        big.spans.partition_point(|s| {
-                            s.y + T::one() < span.y
-                                || (s.y + T::one() == span.y && s.x.end < span.x.start)
-                        })
-                    );
+            match connects_to(&mut self.pending, span) {
+                Ok(0) => {
+                    self.pending.push_back(Cluster::from_span(span));
                 }
-                None => self.pending.push_back(Cluster::from_span(span)),
-            };
-            // Skip the part of the frontier that is already final so it is never
-            // reconsidered: spans in rows above `span.y - 1`, as well as frontier
-            // spans already passed by `span` (and therefore by any future, even
-            // further-right span).
+                Ok(x) => {
+                    let mut iter = self.pending.iter_mut().take(x).rev();
+                    let remain = iter.next().expect("Has more than 0");
+                    for c in iter {
+                        Cluster::merge_into(remain, c.take(), &mut self.merge_cache);
+                    }
+                    for _ in 1..x {
+                        self.pending.pop_front();
+                    }
+                }
+                Err(x) => {
+                    self.pending_item = Some(span);
+                    return Some(x.into_group());
+                }
+            }
+
             maybe_span = self.parent.next();
         }
 
@@ -170,6 +140,62 @@ struct Cluster<T> {
     check_idx: usize,
 }
 
+/// Advances the cursor past spans that can no longer connect to `span` (or
+/// to any later, even further-right input span), then reports whether the
+/// cluster's current frontier span touches `span`.
+///
+/// A span can only connect to inputs exactly one row below it
+/// (`f.y + 1 == span.y`); for those, 8-connectivity (including the diagonal
+/// neighbours) reduces to an x-overlap of the inclusive expansion, i.e.
+/// `f.x.start <= span.x.end && span.x.start <= f.x.end`.
+fn connects_to<T>(clusters: &mut VecDeque<Cluster<T>>, span: Span<T>) -> Result<usize, Cluster<T>>
+where
+    T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
+{
+    let mut i = 0;
+    loop {
+        let mut iter = clusters.iter_mut().skip(i);
+        let Some(mut first) = iter.next() else {
+            return Ok(i);
+        };
+        let mut count = 0;
+        let first_not_out = first.spans[first.check_idx..]
+            .iter()
+            .take_while(|f| {
+                f.y + T::one() < span.y || f.y + T::one() == span.y && f.x.end < span.x.start
+            })
+            .inspect(|_| count += 1)
+            .last();
+        if let Some(f) = first_not_out {
+            first.check_idx += count;
+
+            let inside_span =
+                f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end;
+            let mut moved = false;
+            while let Some(x) = iter.next()
+                && x.spans[x.check_idx] > first.spans[first.check_idx]
+            {
+                std::mem::swap(x, first);
+                first = x;
+                moved = true;
+            }
+            if !inside_span {
+                return Ok(i);
+            } else if !moved {
+                i += 1;
+            }
+        } else {
+            return Err(clusters.pop_front().expect("Checked above"));
+        }
+    }
+    // .next()
+    // .map(|(i, f)| {
+    //     first.check_idx += i;
+    //     f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end
+    // })
+    // .unwrap_or_default();
+    // Ok(1)
+}
 impl<T> Cluster<T>
 where
     T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
@@ -194,29 +220,6 @@ where
             min_y: self.min_y,
             check_idx: self.check_idx,
         }
-    }
-
-    /// Advances the cursor past spans that can no longer connect to `span` (or
-    /// to any later, even further-right input span), then reports whether the
-    /// cluster's current frontier span touches `span`.
-    ///
-    /// A span can only connect to inputs exactly one row below it
-    /// (`f.y + 1 == span.y`); for those, 8-connectivity (including the diagonal
-    /// neighbours) reduces to an x-overlap of the inclusive expansion, i.e.
-    /// `f.x.start <= span.x.end && span.x.start <= f.x.end`.
-    fn connects_to(&mut self, span: Span<T>) -> bool {
-        self.spans[self.check_idx..]
-            .iter()
-            .enumerate()
-            .skip_while(|(_, f)| {
-                f.y + T::one() < span.y || f.y + T::one() == span.y && f.x.end < span.x.start
-            })
-            .next()
-            .map(|(i, f)| {
-                self.check_idx += i;
-                f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end
-            })
-            .unwrap_or_default()
     }
 
     /// `span` is the most recently pulled input span, i.e. it is `>=` every span
