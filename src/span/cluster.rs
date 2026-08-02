@@ -8,7 +8,7 @@ use std::{
 
 use num_traits::One;
 
-use crate::{ImageDimension, Rect, Span, UncheckedCast, span};
+use crate::{ImageDimension, Rect, Span, UncheckedCast};
 
 /// Iterator-combinator that groups neighbouring [`Span`]s into [`SpanCluster`]s.
 ///
@@ -19,23 +19,21 @@ use crate::{ImageDimension, Rect, Span, UncheckedCast, span};
 /// The input is expected to be a sorted span iterator (sorted by `(y, x.start)`,
 /// non-overlapping within each row — i.e. pre-merged).
 ///
-/// `pending` is a `VecDeque` of `(cursor, Cluster)` pairs. The `cursor` is an
-/// index into the cluster's `spans` pointing at the next previous-row
-/// ("frontier") span that must be checked against the sweep. The deque is kept
-/// sorted by that frontier span's `x.start`, so each input span only touches
-/// the relevant front clusters. When a frontier span has been passed it is
-/// consumed by advancing the cursor; if more frontier remains the cluster is
-/// reinserted at its sorted position (`push_front` + adjacent swaps), otherwise
-/// it is retired to the back (`push_back`).
+/// `pending` holds the clusters that are still "open" (could be extended by a
+/// later span). Each cluster carries a cursor (`check_idx`) into its `spans`,
+/// pointing at the next previous-row ("frontier") span that still has to be
+/// checked against the sweep. As the sweep advances, the cursor is moved past
+/// spans that have either become stale (their row is more than one above the
+/// current span) or have been passed (they lie completely to the left of the
+/// current span and every future span). Once no frontier span remains, the
+/// cluster is final and is emitted when it reaches the front of the queue.
 pub struct ClusterSpanIter<I, T> {
     parent: I,
     pending: VecDeque<Cluster<T>>,
-    closed: VecDeque<Cluster<T>>,
     /// Iterator-wide scratch buffer reused for every pairwise merge
     /// (`small`-into-`big`). Cleared, never replaced, so its allocation is
     /// amortised across all merges.
     merge_cache: Vec<Span<T>>,
-    current_row: Option<T>,
     pending_item: Option<Span<T>>,
 }
 
@@ -44,9 +42,7 @@ impl<I, T> ClusterSpanIter<I, T> {
         Self {
             parent,
             pending: VecDeque::new(),
-            closed: VecDeque::new(),
             merge_cache: Vec::new(),
-            current_row: None,
             pending_item: None,
         }
     }
@@ -72,70 +68,43 @@ where
     type Item = SpanCluster<T>;
 
     fn next(&mut self) -> Option<SpanCluster<T>> {
-        loop {
-            let Some(span) = self.pending_item.take().or_else(|| self.parent.next()) else {
-                return Some(self.pending.pop_front()?.into_group());
-            };
-
-            // let mut maybe_unfinished_idx = 0;
-            match next_mergable_if_no_empty(&mut self.pending, 0, span) {
-                Ok(mut first) => {
-                    first.add(span);
-                    let mut i = 0;
-                    loop {
-                        match next_mergable_if_no_empty(&mut self.pending, i, span) {
-                            Ok(mut x) => {
-                                if x.spans.len() > first.spans.len() {
-                                    std::mem::swap(&mut first, &mut x);
-                                }
-                                Cluster::merge_into(&mut first, x, &mut self.merge_cache);
-                            }
-                            Err(Some(x)) => {
-                                // Not optimal, but should be very rare in practice (interwoven but separated regions)
-                                self.pending.push_front(x);
-                                i += 1;
-                            }
-                            Err(None) => break,
-                        }
-                    }
-                    return Some(first.into_group());
-                }
-                Err(None) => self.pending.push_back(Cluster::from_span(span)),
-                // All span's of r are before span
-                Err(Some(r)) => {
-                    self.pending_item = Some(span);
-                    return Some(r.into_group());
+        let mut maybe_span = self.pending_item.take().or_else(|| self.parent.next());
+        while let Some(span) = maybe_span {
+            // Gather every pending cluster whose previous-row frontier touches
+            // `span` (8-connectivity). They must all be merged together through it.
+            let mut connected: Vec<Cluster<T>> = Vec::new();
+            let mut i = 0;
+            while i < self.pending.len() {
+                if self.pending[i].connects_to(span) {
+                    connected.push(self.pending.remove(i).expect("i in range"));
+                } else {
+                    i += 1;
                 }
             }
-        }
-    }
-}
-// Gets the first cluster, which might be merged with span
-/// To do so, it can increase Cluster::check_idx if there are more and items and fix the ordering within data
-/// Errors if
-/// - there are no items in data (Err(None))
-/// - a cluster is entirely before span
-fn next_mergable_if_no_empty<'a, T>(
-    data: &'a mut VecDeque<Cluster<T>>,
-    start: usize,
-    span: Span<T>,
-) -> Result<Cluster<T>, Option<Cluster<T>>>
-where
-    T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
-{
-    let Some(mut first) = data.remove(start) else {
-        return Err(None);
-    };
-    let mut iter = data.iter_mut().skip(start);
 
-    loop {
-        let s = first.check_span();
-        if s.y == span.y + T::one() && s.x.end + T::one() > span.x.start {}
-        if let Some(rest) = first.spans.get_mut(first.check_idx + 1..)
-            && !rest.iter_mut().find(|s| true).is_some()
-        {
-            return Err(Some(first));
+            if connected.is_empty() {
+                self.pending.push_back(Cluster::from_span(span));
+            } else {
+                // Merge small clusters into the largest one to minimise copying.
+                connected.sort_unstable_by_key(|c| c.spans.len());
+                let mut big = connected.pop().expect("checked non-empty above");
+                big.add(span);
+                for small in connected {
+                    Cluster::merge_into(&mut big, small, &mut self.merge_cache);
+                }
+                // Skip the part of the frontier that is already final so it is
+                // never reconsidered: spans in rows above `span.y - 1`, as well
+                // as frontier spans already passed by `span` (and therefore by
+                // any future, even further-right span).
+                big.check_idx = big.spans.partition_point(|s| {
+                    s.y + T::one() < span.y || (s.y + T::one() == span.y && s.x.end < span.x.start)
+                });
+                self.pending.push_back(big);
+            }
+            maybe_span = self.parent.next();
         }
+
+        return Some(self.pending.pop_front()?.into_group());
     }
 }
 
@@ -196,14 +165,29 @@ where
         }
     }
 
-    fn check_span(&self) -> Span<T> {
-        self.spans[self.check_idx]
-    }
-
-    // It's not certain that it does, but it's possible
-    fn might_current_be_merged(&self, next: Span<T>) -> bool {
-        let prev = self.check_span();
-        next.y == prev.y + T::one() && next.x.start > prev.x.start
+    /// Advances the cursor past spans that can no longer connect to `span` (or
+    /// to any later, even further-right input span), then reports whether the
+    /// cluster's current frontier span touches `span`.
+    ///
+    /// A span can only connect to inputs exactly one row below it
+    /// (`f.y + 1 == span.y`); for those, 8-connectivity (including the diagonal
+    /// neighbours) reduces to an x-overlap of the inclusive expansion, i.e.
+    /// `f.x.start <= span.x.end && span.x.start <= f.x.end`.
+    fn connects_to(&mut self, span: Span<T>) -> bool {
+        while self.check_idx < self.spans.len() {
+            let f = self.spans[self.check_idx];
+            if f.y + T::one() < span.y {
+                self.check_idx += 1; // stale: the row was passed long ago
+            } else if f.y + T::one() == span.y && f.x.end < span.x.start {
+                self.check_idx += 1; // frontier span already swept past
+            } else {
+                break;
+            }
+        }
+        let Some(f) = self.spans.get(self.check_idx).copied() else {
+            return false; // fully consumed -> cluster is final
+        };
+        f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end
     }
 
     /// `span` is the most recently pulled input span, i.e. it is `>=` every span
