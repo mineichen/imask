@@ -70,41 +70,48 @@ where
     fn next(&mut self) -> Option<SpanCluster<T>> {
         let mut maybe_span = self.pending_item.take().or_else(|| self.parent.next());
         while let Some(span) = maybe_span {
-            // Gather every pending cluster whose previous-row frontier touches
-            // `span` (8-connectivity). They must all be merged together through it.
-            let mut connected: Vec<Cluster<T>> = Vec::new();
+            // Merge every pending cluster whose previous-row frontier touches
+            // `span` (8-connectivity) into a single stack-local accumulator
+            // (small into big), reusing `merge_cache` as scratch. No per-span
+            // heap allocation: the only owned storage is the cluster's own
+            // `spans` buffer, grown in place.
+            let mut acc: Option<Cluster<T>> = None;
             let mut i = 0;
             while i < self.pending.len() {
                 if self.pending[i].connects_to(span) {
-                    connected.push(self.pending.remove(i).expect("i in range"));
+                    let c = self.pending.remove(i).expect("i in range");
+                    // Fold `c` into the accumulator (small into big), moving the
+                    // accumulator out and back to sidestep the borrow checker.
+                    acc = Some(if let Some(mut big) = acc {
+                        Cluster::merge_into(&mut big, c, &mut self.merge_cache);
+                        big
+                    } else {
+                        c
+                    });
                 } else {
                     i += 1;
                 }
             }
 
-            if connected.is_empty() {
-                self.pending.push_back(Cluster::from_span(span));
-            } else {
-                // Merge small clusters into the largest one to minimise copying.
-                connected.sort_unstable_by_key(|c| c.spans.len());
-                let mut big = connected.pop().expect("checked non-empty above");
-                big.add(span);
-                for small in connected {
-                    Cluster::merge_into(&mut big, small, &mut self.merge_cache);
+            let mut big = match acc {
+                Some(mut big) => {
+                    big.add(span);
+                    big
                 }
-                // Skip the part of the frontier that is already final so it is
-                // never reconsidered: spans in rows above `span.y - 1`, as well
-                // as frontier spans already passed by `span` (and therefore by
-                // any future, even further-right span).
-                big.check_idx = big.spans.partition_point(|s| {
-                    s.y + T::one() < span.y || (s.y + T::one() == span.y && s.x.end < span.x.start)
-                });
-                self.pending.push_back(big);
-            }
+                None => Cluster::from_span(span),
+            };
+            // Skip the part of the frontier that is already final so it is never
+            // reconsidered: spans in rows above `span.y - 1`, as well as frontier
+            // spans already passed by `span` (and therefore by any future, even
+            // further-right span).
+            big.check_idx = big.spans.partition_point(|s| {
+                s.y + T::one() < span.y || (s.y + T::one() == span.y && s.x.end < span.x.start)
+            });
+            self.pending.push_back(big);
             maybe_span = self.parent.next();
         }
 
-        return Some(self.pending.pop_front()?.into_group());
+        Some(self.pending.pop_front()?.into_group())
     }
 }
 
@@ -174,34 +181,25 @@ where
     /// neighbours) reduces to an x-overlap of the inclusive expansion, i.e.
     /// `f.x.start <= span.x.end && span.x.start <= f.x.end`.
     fn connects_to(&mut self, span: Span<T>) -> bool {
-        while self.check_idx < self.spans.len() {
-            let f = self.spans[self.check_idx];
-            if f.y + T::one() < span.y {
-                self.check_idx += 1; // stale: the row was passed long ago
-            } else if f.y + T::one() == span.y && f.x.end < span.x.start {
-                self.check_idx += 1; // frontier span already swept past
-            } else {
-                break;
-            }
-        }
-        let Some(f) = self.spans.get(self.check_idx).copied() else {
-            return false; // fully consumed -> cluster is final
-        };
-        f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end
+        self.spans[self.check_idx..]
+            .iter()
+            .enumerate()
+            .skip_while(|(_, f)| {
+                f.y + T::one() < span.y || f.y + T::one() == span.y && f.x.end < span.x.start
+            })
+            .next()
+            .map(|(i, f)| {
+                self.check_idx += i;
+                f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end
+            })
+            .unwrap_or_default()
     }
 
     /// `span` is the most recently pulled input span, i.e. it is `>=` every span
     /// already present, so a plain push keeps `spans` sorted.
     fn add(&mut self, span: Span<T>) {
-        if self.min_x > span.x.start {
-            self.min_x = span.x.start;
-        }
-        if self.max_x < span.x.end {
-            self.max_x = span.x.end;
-        }
-        if self.min_y > span.y {
-            self.min_y = span.y;
-        }
+        self.min_x = self.min_x.min(span.x.start);
+        self.max_x = self.max_x.max(span.x.end);
         self.spans.push(span);
     }
 
@@ -209,40 +207,37 @@ where
     /// scratch (cleared before and after, never reallocated from empty).
     /// Only the tail of `big` from the first insertion point is moved to the
     /// cache, then the two sorted tails are merged back in place.
-    fn merge_into(big: &mut Cluster<T>, small: Cluster<T>, cache: &mut Vec<Span<T>>) {
-        if big.min_x > small.min_x {
-            big.min_x = small.min_x;
-        }
-        if big.max_x < small.max_x {
-            big.max_x = small.max_x;
-        }
-        if big.min_y > small.min_y {
-            big.min_y = small.min_y;
+    fn merge_into(target: &mut Cluster<T>, mut src: Cluster<T>, cache: &mut Vec<Span<T>>) {
+        if src.min_y < target.min_y {
+            std::mem::swap(target, &mut src);
         }
 
-        let bi = big.spans.partition_point(|s| s <= &small.spans[0]);
-        if bi >= big.spans.len() {
-            big.spans.extend(small.spans.iter().copied());
+        target.min_x = target.min_x.min(src.min_x);
+        target.max_x = target.max_x.max(src.max_x);
+        target.spans.reserve_exact(src.spans.len());
+
+        let bi = target.spans.partition_point(|s| s <= &src.spans[0]);
+        if bi >= target.spans.len() {
+            target.spans.extend(src.spans.iter().copied());
             return;
         }
 
-        cache.clear();
-        cache.extend(big.spans[bi..].iter().copied());
-        big.spans.truncate(bi);
+        cache.extend_from_slice(&target.spans[bi..]);
+        target.spans.truncate(bi);
 
         let mut si = 0;
         let mut ci = 0;
-        while si < small.spans.len() && ci < cache.len() {
-            if small.spans[si] < cache[ci] {
-                big.spans.push(small.spans[si]);
+        while si < src.spans.len() && ci < cache.len() {
+            if src.spans[si] < cache[ci] {
+                target.spans.push(src.spans[si]);
                 si += 1;
             } else {
-                big.spans.push(cache[ci]);
+                target.spans.push(cache[ci]);
                 ci += 1;
             }
         }
-        big.spans.extend(small.spans[si..].iter().copied());
-        big.spans.extend(cache[ci..].iter().copied());
+        target.spans.extend_from_slice(&src.spans[si..]);
+        target.spans.extend_from_slice(&cache[ci..]);
         cache.clear();
     }
 
@@ -294,6 +289,23 @@ mod tests {
 
     fn run(spans: Vec<Span<u32>>) -> Vec<Vec<Span<u32>>> {
         collect_sorted(spans.into_iter().with_bounds(W, H).cluster())
+    }
+    #[test]
+    fn keep_separate() {
+        let spans = vec![
+            Span::new(0u32..2, 0),
+            Span::new(8u32..10, 0),
+            Span::new(1u32..2, 1),
+            Span::new(8u32..10, 1),
+        ];
+        let groups = run(spans);
+        assert_eq!(
+            groups.len(),
+            2,
+            "expected a single merged cluster: {groups:?}"
+        );
+        assert_eq!(groups[0].len(), 2);
+        assert_eq!(groups[1].len(), 2);
     }
 
     #[test]
