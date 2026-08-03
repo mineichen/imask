@@ -1,2 +1,3 @@
+/fuzz/corpus
 /target
 /Cargo.lock

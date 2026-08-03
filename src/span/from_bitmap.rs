@@ -94,6 +94,14 @@ where
     }
 }
 
+impl<I: Iterator<Item = bool> + std::iter::FusedIterator, TOut> std::iter::FusedIterator
+    for BitmapToSpanIter<I, TOut>
+where
+    TOut: Copy + Debug + Ord,
+    u32: UncheckedCast<TOut>,
+{
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;

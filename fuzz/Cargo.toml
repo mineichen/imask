@@ -1,0 +1,34 @@
+[package]
+name = "imask-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+imask = { path = ".." }
+
+[[bin]]
+name = "cluster_rotation"
+path = "fuzz_targets/cluster_rotation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cluster_reference"
+path = "fuzz_targets/cluster_reference.rs"
+test = false
+doc = false
+bench = false
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+debug-assertions = true
