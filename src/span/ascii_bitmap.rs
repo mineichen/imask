@@ -104,6 +104,7 @@ mod tests {
         #[rustfmt::skip]
         let ascii = AsciiBitmap::new([
             *b".#..###.##",
+            *b".#..###.#.",
             *b"..........",
             *b".#..###..#",
         ]).iter::<u16>();
@@ -112,9 +113,12 @@ mod tests {
                 Span::new(1u16..2, 0),
                 Span::new(4..7, 0),
                 Span::new(8..10, 0),
-                Span::new(1u16..2, 2),
-                Span::new(4..7, 2),
-                Span::new(9..10, 2)
+                Span::new(1u16..2, 1),
+                Span::new(4..7, 1),
+                Span::new(8..9, 1),
+                Span::new(1u16..2, 3),
+                Span::new(4..7, 3),
+                Span::new(9..10, 3)
             ],
             ascii.collect::<Vec<_>>()
         );
