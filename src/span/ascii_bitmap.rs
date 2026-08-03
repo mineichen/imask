@@ -5,6 +5,8 @@ use crate::{ImageDimension, Rect, SignedNonZeroable, Span, UncheckedCast};
 #[derive(Clone)]
 pub(crate) struct AsciiBitmap<const WIDTH: usize, const HEIGHT: usize> {
     data: [[u8; WIDTH]; HEIGHT],
+    offset_x: usize,
+    offset_y: usize,
 }
 
 pub(crate) struct AsciiBitmapIter<T, const WIDTH: usize, const HEIGHT: usize> {
@@ -24,7 +26,18 @@ const fn usize_to_nonzero_u32(x: usize) -> NonZeroU32 {
 
 impl<const WIDTH: usize, const HEIGHT: usize> AsciiBitmap<WIDTH, HEIGHT> {
     pub fn new(data: [[u8; WIDTH]; HEIGHT]) -> Self {
-        Self { data: data }
+        Self {
+            data: data,
+            offset_x: 0,
+            offset_y: 0,
+        }
+    }
+    pub fn new_with_offset(data: [[u8; WIDTH]; HEIGHT], offset_x: usize, offset_y: usize) -> Self {
+        Self {
+            data,
+            offset_x,
+            offset_y,
+        }
     }
     pub fn iter<T>(self) -> AsciiBitmapIter<T, WIDTH, HEIGHT> {
         AsciiBitmapIter {
@@ -43,8 +56,8 @@ impl<T, const WIDTH: usize, const HEIGHT: usize> ImageDimension
         let height = const { usize_to_nonzero_u32(HEIGHT) };
         let width = self.width();
         Rect {
-            x: 0,
-            y: 0,
+            x: self.bitmap.offset_x.cast_unchecked(),
+            y: self.bitmap.offset_y.cast_unchecked(),
             width,
             height,
         }
@@ -79,7 +92,9 @@ where
             self.data_x = 0;
         };
 
-        let start_x = self.data_x.cast_unchecked();
+        let offset_x = self.bitmap.offset_x.cast_unchecked();
+        let offset_y = self.bitmap.offset_y.cast_unchecked();
+        let start_x = self.data_x.cast_unchecked() + offset_x;
         self.data_x += 1;
 
         while let Some(x) = row.get(self.data_x) {
@@ -88,8 +103,8 @@ where
             }
             self.data_x += 1;
         }
-        let end_x = self.data_x.cast_unchecked();
-        Some(Span::new(start_x..end_x, self.data_y.cast_unchecked()))
+        let end_x = self.data_x.cast_unchecked() + offset_x;
+        Some(Span::new(start_x..end_x, self.data_y.cast_unchecked() + offset_y))
     }
 }
 
@@ -117,6 +132,24 @@ mod tests {
                 Span::new(1u16..2, 3),
                 Span::new(4..7, 3),
                 Span::new(9..10, 3)
+            ],
+            ascii.collect::<Vec<_>>()
+        );
+    }
+    #[test]
+    fn with_offset() {
+        #[rustfmt::skip]
+        let ascii = AsciiBitmap::new_with_offset([
+            *b".#..#",
+            *b".....",
+            *b"###.#",
+        ], 10, 2).iter::<u16>();
+        assert_eq!(
+            vec![
+                Span::new(11u16..12, 2),
+                Span::new(14..15, 2),
+                Span::new(10..13, 4),
+                Span::new(14..15, 4),
             ],
             ascii.collect::<Vec<_>>()
         );
