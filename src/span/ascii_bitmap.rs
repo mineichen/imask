@@ -1,10 +1,8 @@
-use std::{
-    array, fmt::Debug, iter::Flatten, marker::PhantomData, num::NonZeroU32, ops::Add, slice::Iter,
-};
+use std::{fmt::Debug, marker::PhantomData, num::NonZeroU32, ops::Add};
 
 use crate::{ImageDimension, Rect, SignedNonZeroable, Span, UncheckedCast};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct AsciiBitmap<const WIDTH: usize, const HEIGHT: usize> {
     data: [[u8; WIDTH]; HEIGHT],
 }
