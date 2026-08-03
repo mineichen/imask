@@ -91,6 +91,7 @@ where
                     for c in iter {
                         Cluster::merge_into(remain, c.take(), &mut self.merge_cache);
                     }
+                    remain.add(span);
                     for _ in 1..x {
                         self.pending.pop_front();
                     }
@@ -151,61 +152,73 @@ struct Cluster<T> {
     check_idx: usize,
 }
 
-/// Advances the cursor past spans that can no longer connect to `span` (or
-/// to any later, even further-right input span), then reports whether the
-/// cluster's current frontier span touches `span`.
+/// Refreshes the front of `clusters` for the input `span` and reports how many
+/// leading clusters 8-connect to it.
 ///
-/// A span can only connect to inputs exactly one row below it
-/// (`f.y + 1 == span.y`); for those, 8-connectivity (including the diagonal
-/// neighbours) reduces to an x-overlap of the inclusive expansion, i.e.
-/// `f.x.start <= span.x.end && span.x.start <= f.x.end`.
+/// The front cluster's cursor (`check_idx`) is advanced past every span that is
+/// sealed (its row is more than one above `span`) or passed (one row above and
+/// entirely to the left of `span`, hence also of every later, larger input), but
+/// never past the last span. If it stops on a span that is still consumed, that
+/// span is necessarily the last one: the cluster's newest span is too far from
+/// `span` to ever reconnect, so the cluster is final and is yielded (`Err`).
+/// Advancing grows the cluster's frontier key (`spans[check_idx]`), so the
+/// cluster is then swapped — piece by piece — back to its sorted place; whenever
+/// it actually moves, the new front is refreshed the same way. The queue thus
+/// stays strictly ordered by `spans[check_idx]`, so the clusters touching `span`
+/// form a contiguous run at the front, returned as `Ok(count)`.
 fn connects_to<T>(clusters: &mut VecDeque<Cluster<T>>, span: Span<T>) -> Result<usize, Cluster<T>>
 where
     T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
 {
-    let mut i = 0;
     loop {
-        let mut iter = clusters.iter_mut().skip(i);
-        let Some(mut first) = iter.next() else {
-            return Ok(i);
+        let mut iter = clusters.iter_mut();
+        let Some(mut prev) = iter.next() else {
+            return Ok(0);
         };
-        let mut count = 0;
-        let first_not_out = first.spans[first.check_idx..]
-            .iter()
-            .take_while(|f| {
-                f.y + T::one() < span.y || f.y + T::one() == span.y && f.x.end < span.x.start
-            })
-            .inspect(|_| count += 1)
-            .last();
-        if let Some(f) = first_not_out {
-            first.check_idx += count;
 
-            let inside_span =
-                f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end;
-            let mut moved = false;
-            while let Some(x) = iter.next()
-                && x.spans[x.check_idx] > first.spans[first.check_idx]
-            {
-                std::mem::swap(x, first);
-                first = x;
-                moved = true;
+        while prev.check_idx < prev.spans.len() && consumed(prev.spans[prev.check_idx], span) {
+            prev.check_idx += 1;
+            if prev.check_idx == prev.spans.len() {
+                return Err(clusters.pop_front().expect("cannot be empty"));
             }
-            if !inside_span {
-                return Ok(i);
-            } else if !moved {
-                i += 1;
+        }
+        // Swap the front cluster toward the back until it is in sorted order.
+        let mut has_swap = false;
+        for next in iter {
+            let ki = prev.spans[prev.check_idx];
+            let kn = next.spans[next.check_idx];
+            if ki > kn {
+                std::mem::swap(prev, next);
+                has_swap = true;
+                prev = next;
+            } else {
+                break;
             }
-        } else {
-            return Err(clusters.pop_front().expect("Checked above"));
+        }
+        if !has_swap {
+            // The front is live and in place. Count the leading clusters whose frontier
+            // touches `span`: the frontier is one row above and not passed
+            // (`x.end >= span.x.start`), so only `x.start <= span.x.end` remains.
+
+            return Ok(clusters
+                .iter()
+                .take_while(|c| {
+                    let f = c.spans[c.check_idx];
+                    f.y + T::one() == span.y && f.x.start <= span.x.end
+                })
+                .count());
         }
     }
-    // .next()
-    // .map(|(i, f)| {
-    //     first.check_idx += i;
-    //     f.y + T::one() == span.y && f.x.start <= span.x.end && span.x.start <= f.x.end
-    // })
-    // .unwrap_or_default();
-    // Ok(1)
+}
+
+/// A span is consumed w.r.t. `span` when it can no longer connect to `span` nor
+/// to any later, larger input: sealed (row gap >= 2) or passed (exactly one row
+/// above and entirely to the left).
+fn consumed<T>(f: Span<T>, span: Span<T>) -> bool
+where
+    T: Ord + Copy + Add<Output = T> + One,
+{
+    f.y + T::one() < span.y || (f.y + T::one() == span.y && f.x.end < span.x.start)
 }
 impl<T> Cluster<T>
 where
@@ -258,6 +271,7 @@ where
         let bi = target.spans.partition_point(|s| s <= &src.spans[0]);
         if bi >= target.spans.len() {
             target.spans.extend(src.spans.iter().copied());
+            target.check_idx = new_check_idx;
             return;
         }
 
@@ -486,5 +500,19 @@ mod tests {
             vec![Span::new(10u32..12, 0), Span::new(10u32..12, 1)]
         );
         assert_eq!(groups[2], vec![Span::new(5u32..6, 1)]);
+    }
+
+    #[test]
+    fn frontier_fully_passed_cluster_has_no_live_frontier() {
+        // Reproduces the out-of-bounds in the `#[cfg(debug_assertions)]`
+        // invariant check. After `(0, 0..2)`, the next span `(1, 5..6)` is one
+        // row below but far to the right, so the cluster's only frontier span
+        // `(0, 0..2)` is *passed* and `check_idx` advances to `spans.len()`.
+        // The cluster is not yet sealed (its newest span is exactly one row
+        // above), so it lingers in `pending` with `check_idx == len`, making
+        // `spans[check_idx]` in the debug check index out of bounds.
+        let spans = vec![Span::new(0u32..2, 0), Span::new(5u32..6, 1)];
+        let groups = run(spans);
+        assert_eq!(groups.len(), 2);
     }
 }
