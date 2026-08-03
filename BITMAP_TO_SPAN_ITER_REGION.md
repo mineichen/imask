@@ -1,0 +1,4 @@
+Execute FALLIBLE_CONSTURCTION.md first, abort if the file is still there
+Execute ITERATOR_WRAPPER.md first, abort if the file is still there
+
+Extend BitmapToSpanIter to create Spans from a Bitmap in a specific roi. Add `::from_bool_iter(iter: T, dims: (NonZeroU32, NonZeroU32), roi: Rect<u32>) -> Result<Self, IncompatibleSize>` and `from_byte_slice(x: &[u8], dims: (NonZeroU32, NonZeroU32), roi: imask::Rect<u32>) -> Result<Self, IncompatibleSize>`... Fail if roi is not completely within dims. from_bool uses Iterator::skip internally, to skip bool-items which are not inside the roi. In debug-mode, the iterator should check, if the parent-iterator contains the correct number of remaining bools when it returns None... To do so, it returns a BitmapToSpanIter<DebugCheckRemaining<TParent>> instead of self... DebugCheckRemaining also implements Iterator + ImageDimensions and checks on None, if the correct number of parent.count() is the expected number.

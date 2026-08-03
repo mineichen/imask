@@ -316,10 +316,8 @@ mod tests {
 
     use crate::{ImageDimension, ImaskSet, Rect, Span};
 
+    use super::super::ascii_bitmap::AsciiBitmap;
     use super::*;
-
-    const W: NonZero<u32> = NonZero::new(100).unwrap();
-    const H: NonZero<u32> = NonZero::new(100).unwrap();
 
     /// Collect all clusters, each as a sorted `Vec<Span<u32>>`, sorted across
     /// clusters by (min_y, min_x) so assertions are order-independent.
@@ -341,23 +339,18 @@ mod tests {
         groups
     }
 
-    fn run(spans: Vec<Span<u32>>) -> Vec<Vec<Span<u32>>> {
-        collect_sorted(spans.into_iter().with_bounds(W, H).cluster())
+    /// Run the clusterer over a `#`/`.` ASCII bitmap (`#` = set pixel).
+    fn run_ascii<const W: usize, const H: usize>(data: [[u8; W]; H]) -> Vec<Vec<Span<u32>>> {
+        collect_sorted(AsciiBitmap::new(data).iter::<u32>().cluster())
     }
     #[test]
     fn keep_separate() {
-        let spans = vec![
-            Span::new(0u32..2, 0),
-            Span::new(8u32..10, 0),
-            Span::new(1u32..2, 1),
-            Span::new(8u32..10, 1),
-        ];
-        let groups = run(spans);
-        assert_eq!(
-            groups.len(),
-            2,
-            "expected a single merged cluster: {groups:?}"
-        );
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"##......##",
+            *b".#......##",
+        ]);
+        assert_eq!(groups.len(), 2, "two disconnected clusters: {groups:?}");
         assert_eq!(groups[0].len(), 2);
         assert_eq!(groups[1].len(), 2);
     }
@@ -365,12 +358,11 @@ mod tests {
     #[test]
     fn covering_span() {
         // row 0: two disconnected spans; row 1: a single span overlapping both.
-        let spans = vec![
-            Span::new(0u32..2, 0),
-            Span::new(8u32..10, 0),
-            Span::new(1u32..9, 1),
-        ];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"##......##",
+            *b".########.",
+        ]);
         assert_eq!(
             groups.len(),
             1,
@@ -382,23 +374,26 @@ mod tests {
     #[test]
     fn diagonal_only_merged() {
         // Single-pixel staircase: each pair touches only diagonally.
-        let spans = vec![
-            Span::new(0u32..1, 0),
-            Span::new(1u32..2, 1),
-            Span::new(2u32..3, 2),
-            Span::new(3u32..4, 3),
-        ];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b".#.#",
+            *b"..#.",
+            *b".#.#",
+        ]);
         assert_eq!(groups.len(), 1, "diagonal chain must merge: {groups:?}");
-        assert_eq!(groups[0].len(), 4);
+        assert_eq!(groups[0].len(), 5);
     }
 
     #[test]
     fn row_gap_not_merged() {
         // A span in line 0 and line 2 (line 1 empty) must stay separate even
         // though their x-ranges are identical.
-        let spans = vec![Span::new(0u32..5, 0), Span::new(0u32..5, 2)];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"#####",
+            *b".....",
+            *b"#####",
+        ]);
         assert_eq!(groups.len(), 2, "row gap (>=2) must split: {groups:?}");
         assert_eq!(groups[0], vec![Span::new(0u32..5, 0)]);
         assert_eq!(groups[1], vec![Span::new(0u32..5, 2)]);
@@ -406,15 +401,13 @@ mod tests {
 
     #[test]
     fn disconnected_then_meet() {
-        // row 1: three separate spans; row 2: one pre-merged span overlapping
-        // all three → they merge into a single cluster.
-        let spans = vec![
-            Span::new(0u32..2, 1),
-            Span::new(4u32..6, 1),
-            Span::new(8u32..10, 1),
-            Span::new(0u32..10, 2),
-        ];
-        let groups = run(spans);
+        // bottom row: three separate spans; top row: one pre-merged span
+        // overlapping all three → they merge into a single cluster.
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"##########",
+            *b"##..##..##",
+        ]);
         assert_eq!(groups.len(), 1, "three clusters should meet: {groups:?}");
         assert_eq!(groups[0].len(), 4);
     }
@@ -422,15 +415,13 @@ mod tests {
     #[test]
     fn stroke_square_closed() {
         // Closed hollow square outline (perimeter) → one cluster.
-        let spans = vec![
-            Span::new(0u32..4, 0),
-            Span::new(0u32..1, 1),
-            Span::new(3u32..4, 1),
-            Span::new(0u32..1, 2),
-            Span::new(3u32..4, 2),
-            Span::new(0u32..4, 3),
-        ];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"####",
+            *b"#..#",
+            *b"#..#",
+            *b"####",
+        ]);
         assert_eq!(
             groups.len(),
             1,
@@ -441,19 +432,13 @@ mod tests {
 
     #[test]
     fn stroke_square_open_bottom_right() {
-        // Same outline but the bottom-right is open (row 3 misses the right
-        // part). The right column is still connected through the top → one
-        // cluster. This exercises the multi-span-frontier / cursor matching:
-        // the right column must not be missed.
-        let spans = vec![
-            Span::new(0u32..4, 0),
-            Span::new(0u32..1, 1),
-            Span::new(3u32..4, 1),
-            Span::new(0u32..1, 2),
-            Span::new(3u32..4, 2),
-            Span::new(0u32..2, 3),
-        ];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"####",
+            *b"#..#",
+            *b"#..#",
+            *b"##..",
+        ]);
         assert_eq!(
             groups.len(),
             1,
@@ -464,8 +449,14 @@ mod tests {
 
     #[test]
     fn cluster_has_image_dimension() {
-        let spans = vec![Span::new(1u32..4, 2u32), Span::new(1u32..4, 3u32)];
-        let mut iter = spans.into_iter().with_bounds(W, H).cluster();
+        #[rustfmt::skip]
+        let bitmap = AsciiBitmap::new([
+            *b"....",
+            *b"....",
+            *b".###",
+            *b".###"]
+        );
+        let mut iter = bitmap.iter::<u32>().cluster();
         let cluster = iter.next().unwrap();
         let bounds = ImageDimension::bounds(&cluster);
         assert_eq!(
@@ -482,14 +473,11 @@ mod tests {
         // appears in the middle; the right cluster must still match its row-1
         // span. Verifies that retiring a passed cluster to the back (no `held`)
         // does not lose or skip the cluster behind it.
-        let spans = vec![
-            Span::new(0u32..2, 0),
-            Span::new(10u32..12, 0),
-            Span::new(0u32..2, 1),
-            Span::new(5u32..6, 1),
-            Span::new(10u32..12, 1),
-        ];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"##........##",
+            *b"##...#....##",
+        ]);
         assert_eq!(groups.len(), 3, "three clusters: {groups:?}");
         assert_eq!(
             groups[0],
@@ -511,8 +499,11 @@ mod tests {
         // The cluster is not yet sealed (its newest span is exactly one row
         // above), so it lingers in `pending` with `check_idx == len`, making
         // `spans[check_idx]` in the debug check index out of bounds.
-        let spans = vec![Span::new(0u32..2, 0), Span::new(5u32..6, 1)];
-        let groups = run(spans);
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"##....",
+            *b".....#",
+        ]);
         assert_eq!(groups.len(), 2);
     }
 }

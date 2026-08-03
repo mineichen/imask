@@ -104,8 +104,21 @@ where
             self.data_x += 1;
         }
         let end_x = self.data_x.cast_unchecked() + offset_x;
-        Some(Span::new(start_x..end_x, self.data_y.cast_unchecked() + offset_y))
+        Some(Span::new(
+            start_x..end_x,
+            self.data_y.cast_unchecked() + offset_y,
+        ))
     }
+}
+
+impl<
+    T: SignedNonZeroable + Eq + Ord + Add<Output = T> + Copy + Debug,
+    const WIDTH: usize,
+    const HEIGHT: usize,
+> std::iter::FusedIterator for AsciiBitmapIter<T, WIDTH, HEIGHT>
+where
+    usize: UncheckedCast<T>,
+{
 }
 
 #[cfg(test)]
