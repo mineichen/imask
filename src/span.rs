@@ -5,6 +5,7 @@ use std::{
 
 use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, UncheckedCast};
 
+mod ascii_bitmap;
 mod affine_transform;
 mod clip;
 mod cluster;
