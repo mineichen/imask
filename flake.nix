@@ -16,16 +16,21 @@
           rust = with inputs.fenix.packages.${system}; combine [
             stable.toolchain
           ];
+          # cargo-fuzz needs a nightly toolchain (`-Z` sanitizer/coverage flags),
+          # so the fuzzing shell uses a dedicated nightly toolchain.
+          rustNightly = with inputs.fenix.packages.${system}; combine [
+            latest.toolchain
+          ];
           commonBuildInputs = [
             rust
-	    pkgs.git
-	    pkgs.stdenv.cc
-	  ];
+	        pkgs.git
+	        pkgs.stdenv.cc
+          ];
           greet = ''
             echo "===================================="
             echo " Welcome to the deterministic dev shell! "
             echo "===================================="
-            cargo --version 
+            cargo --version
           '';
           policy = pkgs.writeText "policy.json" ''{"default":[{"type":"insecureAcceptAnything"}]}'';
           containername = "imask-isolated-dev";
@@ -40,6 +45,27 @@
           devShells.default = pkgs.mkShell({
             buildInputs = commonBuildInputs;
             shellHook = greet;
+          });
+          # Fuzzing shell: nightly toolchain + cargo-fuzz, with the shared
+          # libraries cargo-fuzz needs at runtime (libz, libstdc++).
+          devShells.fuzz = pkgs.mkShell({
+            buildInputs = [
+              rustNightly
+              pkgs.cargo-fuzz
+              pkgs.zlib
+              pkgs.stdenv.cc.cc.lib
+            ];
+            shellHook = ''
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.zlib pkgs.stdenv.cc.cc.lib ]}:$LD_LIBRARY_PATH"
+              echo "===================================="
+              echo " Welcome to the fuzzing shell!      "
+              echo "===================================="
+              cargo --version
+              echo "The fuzz workspace lives in ./fuzz."
+              echo "  cd fuzz && cargo fuzz run cluster_reference"
+              echo "  cd fuzz && cargo fuzz run cluster_rotation"
+              echo "Optionally: cargo fuzz run cluster_reference -- -max_total_time=240"
+            '';
           });
           packages.isolated-build = pkgs.dockerTools.buildImage {
             name = containername;

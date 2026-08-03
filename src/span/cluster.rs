@@ -508,19 +508,55 @@ mod tests {
     }
 
     #[test]
-    fn frontier_fully_passed_cluster_has_no_live_frontier() {
-        // Reproduces the out-of-bounds in the `#[cfg(debug_assertions)]`
-        // invariant check. After `(0, 0..2)`, the next span `(1, 5..6)` is one
-        // row below but far to the right, so the cluster's only frontier span
-        // `(0, 0..2)` is *passed* and `check_idx` advances to `spans.len()`.
-        // The cluster is not yet sealed (its newest span is exactly one row
-        // above), so it lingers in `pending` with `check_idx == len`, making
-        // `spans[check_idx]` in the debug check index out of bounds.
+    fn interwoven_spiral() {
         #[rustfmt::skip]
         let groups = run_ascii([
-            *b"##....",
-            *b".....#",
+            *b"################",
+            *b"#...............",
+            *b"#.##############",
+            *b"#.#............#",
+            *b"#.#.##########.#",
+            *b"#.#.#........#.#",
+            *b"#.#.#.######.#.#",
+            *b"#.#.#.#....#.#.#",
+            *b"#.#.#.#..#.#.#.#",
+            *b"#.#.#.#..#.#.#.#",
+            *b"#.#.#.#..#.#.#.#",
+            *b"#.#.#....#.#.#.#",
+            *b"#.#.######.#.#.#",
+            *b"#.#........#.#.#",
+            *b"#.##########.#.#",
+            *b"#............#.#",
+            *b"##############.#",
+            *b"...............#",
+            *b"################",
         ]);
         assert_eq!(groups.len(), 2);
+    }
+    #[test]
+    fn spiral() {
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"################",
+            *b"#...............",
+            *b"#.##############",
+            *b"#.#............#",
+            *b"#.#.##########.#",
+            *b"#.#.#........#.#",
+            *b"#.#.#.######.#.#",
+            *b"#.#.#.#....#.#.#",
+            *b"#.#.#.#.##.#.#.#",
+            *b"#.#.#.#..#.#.#.#",
+            *b"#.#.#.#..#.#.#.#",
+            *b"#.#.#.#..#.#.#.#",
+            *b"#.#.#.####.#.#.#",
+            *b"#.#.#......#.#.#",
+            *b"#.#.########.#.#",
+            *b"#.#..........#.#",
+            *b"#.############.#",
+            *b"#..............#",
+            *b"################",
+        ]);
+        assert_eq!(groups.len(), 1);
     }
 }
