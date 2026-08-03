@@ -1,5 +1,6 @@
 use std::{
     fmt::{Debug, Display},
+    iter::FusedIterator,
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -196,6 +197,25 @@ where
         let pending = self.pending.is_some() as usize;
         (lo.saturating_add(pending), None)
     }
+}
+
+impl<TParent> FusedIterator for SortedRangesSpanIter<TParent>
+where
+    TParent: Iterator<
+            Item: CreateRange<
+                Item: Copy
+                          + Div<Output = <TParent::Item as CreateRange>::Item>
+                          + Mul<Output = <TParent::Item as CreateRange>::Item>
+                          + Add<Output = <TParent::Item as CreateRange>::Item>
+                          + Sub<Output = <TParent::Item as CreateRange>::Item>
+                          + Rem<Output = <TParent::Item as CreateRange>::Item>
+                          + Ord
+                          + Debug,
+            >,
+        > + ImageDimension
+        + FusedIterator,
+    u32: UncheckedCast<<TParent::Item as CreateRange>::Item>,
+{
 }
 
 // impl<T> IntoSpanIter<T> for SortedRanges<T, T> {
