@@ -347,8 +347,8 @@ mod tests {
     fn keep_separate() {
         #[rustfmt::skip]
         let groups = run_ascii([
-            *b"##......##",
-            *b".#......##",
+            *b"##.##",
+            *b".#.##",
         ]);
         assert_eq!(groups.len(), 2, "two disconnected clusters: {groups:?}");
         assert_eq!(groups[0].len(), 2);
@@ -405,11 +405,28 @@ mod tests {
         // overlapping all three → they merge into a single cluster.
         #[rustfmt::skip]
         let groups = run_ascii([
-            *b"##########",
-            *b"##..##..##",
+            *b"#########",
+            *b"#........",
+            *b"#.#####..",
+            *b"#.#.#.#.#",
+            *b"#########",
         ]);
         assert_eq!(groups.len(), 1, "three clusters should meet: {groups:?}");
-        assert_eq!(groups[0].len(), 4);
+        assert_eq!(groups[0].len(), 10);
+    }
+    #[test]
+    fn disconnected_then_meet2() {
+        // bottom row: three separate spans; top row: one pre-merged span
+        // overlapping all three → they merge into a single cluster.
+        #[rustfmt::skip]
+        let groups = run_ascii([
+            *b"#######..",
+            *b"#.....#..",
+            *b"#.###.#.#",
+            *b"#.#.#.#.#",
+            *b"#########",
+        ]);
+        assert_eq!(groups.len(), 1, "three clusters should meet: {groups:?}");
     }
 
     #[test]
