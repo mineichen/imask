@@ -143,6 +143,8 @@ impl<T> ImageDimension for SpanCluster<T> {
     }
 }
 
+impl<T> FusedIterator for SpanCluster<T> {}
+
 struct Cluster<T> {
     /// Sorted by `(y, x.start)`; never empty.
     spans: Vec<Span<T>>,

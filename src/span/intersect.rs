@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
+use std::iter::FusedIterator;
 
 use super::peekable::Peekable;
 use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
@@ -178,6 +179,14 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
         };
         (0, hi)
     }
+}
+
+impl<TA, TB, T> FusedIterator for Intersect<TA, TB>
+where
+    TA: Iterator<Item = Span<T>> + FusedIterator,
+    TB: Iterator<Item = Span<T>> + FusedIterator,
+    T: Ord + Copy + Debug,
+{
 }
 
 #[cfg(test)]

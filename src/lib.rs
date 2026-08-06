@@ -53,3 +53,13 @@ pub trait ImageDimension {
     fn bounds(&self) -> Rect<u32>;
     fn width(&self) -> NonZero<u32>;
 }
+
+impl<I: ImageDimension + ?Sized> ImageDimension for &mut I {
+    fn bounds(&self) -> Rect<u32> {
+        (**self).bounds()
+    }
+
+    fn width(&self) -> NonZero<u32> {
+        (**self).width()
+    }
+}
