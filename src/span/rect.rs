@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    iter::FusedIterator,
     num::NonZeroU32,
     ops::{Add, Sub},
 };
@@ -65,6 +66,11 @@ impl<T: Ord + One + Copy + Add<Output = T> + Sub<Output = T> + TryInto<usize>> I
             Err(_) => (0, None),
         }
     }
+}
+
+impl<T: Ord + One + Copy + Add<Output = T> + Sub<Output = T> + TryInto<usize>> FusedIterator
+    for RectSpanIter<T>
+{
 }
 
 #[cfg(test)]

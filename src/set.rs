@@ -10,7 +10,7 @@ use crate::visualize_iter::IterVisualizer;
 use crate::{
     CreateRange, ImageDimension, IncompatibleSizeError, NonZeroRange, PipelineError, Rect,
     SignedNonZeroable, SortedRangesSpanIter, Span, UncheckedCast, WithBounds, WithRoi,
-    span::{ClipSpanIter, InspectAlwaysSpanIter},
+    span::{ClipSpanIter, FoldInlineSpanIter},
 };
 
 fn invalid<T: Display>(e: T) -> std::io::Error {
@@ -61,10 +61,14 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn inspect_bounds<R: CreateRange>(self) -> BoundsInspector<Self::IntoIter, R> {
         BoundsInspector::new(self.into_iter())
     }
-    /// In contrast to inspect, inspect_always guarantees to call the lambda on all inputs spans,
-    /// even if partially consumed.
+    /// In contrast to std::iter::inspect, `fold_inline` calls the lambda on all inputs spans,
+    /// if `Self::finish` is called. The function deliberately uses Fn rather than FnMut,
+    /// to force the caller to use the accumulator instead of `&mut other_state`, which can only be obtained via `Self::finish`
+    /// and thus is guaranteed to use all input spans, even if a consumer of Self doesn't drive it to completion.
     ///
-    /// If Self::Drop is called during unwinding, the callback will not be executed to avoid aborting the program if f() panics again
+    /// If you only want to inspect spans which the consumer consumed, you can create a
+    /// `InlineAccumulatorSpanIter::new` yourself, which doesn't have the `A: 'static` restriction
+    /// and accepts a `FnMut` to bypass accumulator entirely (accumulator could then be `()`)
     /// ```
     /// use std::num::NonZeroU32;
     /// use imask::{Rect, ImaskSet, ImageDimension};
@@ -72,18 +76,19 @@ pub trait ImaskSet: IntoIterator + Sized {
     /// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
     /// let spans = Rect::new(10u32, 20, SIZE, SIZE).into_spans();
     /// let mut count = 0;
-    /// let inspect = spans.clone().inspect_always(|_r| {
-    ///     count += 1;
+    /// let mut inspect = spans.clone().fold_inline(0, |a, _r| {
+    ///     *a += 1;
     /// });
     /// assert_eq!(spans.bounds(), inspect.bounds());
-    /// assert_eq!(9, inspect.take(9).count());
-    /// assert_eq!(10, count);
+    /// assert_eq!(9, (&mut inspect).take(9).count());
+    /// assert_eq!(10, inspect.finish_all());
     /// ```
-    fn inspect_always<F>(self, f: F) -> InspectAlwaysSpanIter<Self::IntoIter, F>
+    fn fold_inline<F, A>(self, accumulator: A, f: F) -> FoldInlineSpanIter<Self::IntoIter, F, A>
     where
-        F: FnMut(&<Self::IntoIter as Iterator>::Item),
+        F: Fn(&mut A, &<Self::IntoIter as Iterator>::Item),
+        A: 'static,
     {
-        InspectAlwaysSpanIter::new(self.into_iter(), f)
+        FoldInlineSpanIter::new(self.into_iter(), accumulator, f)
     }
     fn union<TOther: IntoIterator<Item = Span<T>>, T>(
         self,
@@ -438,7 +443,7 @@ where
 
 /// Builds a [`SortedRanges`] from spans where [`SortedRangesSpanBuilder::add`] is infallible.
 ///
-/// This makes it suitable for use with [`ImaskSet::inspect_always`]: the first error is captured
+/// This makes it suitable for use with [`ImaskSet::fold_inline`]: the first error is captured
 /// internally and only surfaced by [`SortedRangesSpanBuilder::build`].
 ///
 /// ```
@@ -448,8 +453,9 @@ where
 /// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
 /// let rect = Rect::new(10, 10, SIZE, SIZE);
 /// let mut builder = SortedRangesSpanBuilder::<u32>::new(rect);
-/// rect.into_spans().inspect_always(|s| builder.add(*s)).next();
-/// let ranges = builder.build().unwrap();
+/// let mut iter = rect.into_spans().fold_inline(builder, |b, s| b.add(*s));
+/// iter.next();
+/// let ranges = iter.finish_all().build().unwrap();
 /// assert_eq!(
 ///     SortedRanges::try_from_span_iter(rect.into_spans()).unwrap(),
 ///     ranges
