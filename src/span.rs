@@ -4,6 +4,8 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
+use num_traits::One;
+
 use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, UncheckedCast};
 
 mod affine_transform;
@@ -32,11 +34,13 @@ pub use from_bitmap::*;
 pub use from_bitmap_range::*;
 pub use intersect::*;
 pub use into_ranges::*;
-use num_traits::One;
 pub use rect::*;
 pub use subtract::*;
 pub use union::*;
 pub use union_all::*;
+
+#[cfg(test)]
+pub(crate) use ascii_bitmap::{AsciiBitmap, AsciiBitmapIter};
 
 pub trait IntoSpanIter<T> {
     type Item;
@@ -218,16 +222,6 @@ where
 {
 }
 
-// impl<T> IntoSpanIter<T> for SortedRanges<T, T> {
-//     type Item = T;
-
-//     type IntoIter = ;
-
-//     fn into_span_iter(self) {
-//         self.iter_roi_owned()
-//         todo!()
-//     }
-// }
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;

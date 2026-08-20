@@ -149,13 +149,11 @@ impl<R: Read, TRange: CreateRange<Item = u64>> Iterator for ReaderRangeIterator<
     }
 }
 
-impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
+impl<T> SortedRanges<T> {
     pub fn from_serialized(input: &[u8]) -> io::Result<Self>
     where
-        TIncluded: TryFrom<u64>,
-        TExcluded: TryFrom<u64>,
-        <TIncluded as TryFrom<u64>>::Error: std::fmt::Display,
-        <TExcluded as TryFrom<u64>>::Error: std::fmt::Display,
+        T: TryFrom<u64>,
+        <T as TryFrom<u64>>::Error: std::fmt::Display,
     {
         let Some(header_bytes) = input.first_chunk() else {
             return Err(unexpected_eof());
@@ -174,9 +172,9 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             .map(|chunk| (read_u64(chunk), read_u64(&chunk[U64_SIZE..])))
             .take_while(|&(_, len)| len != 0)
             .map(|(gap, len)| {
-                let included = TIncluded::try_from(len)
+                let included = T::try_from(len)
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-                let excluded = TExcluded::try_from(gap)
+                let excluded = T::try_from(gap)
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()));
                 all_included.push(included);
                 excluded

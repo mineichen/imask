@@ -220,20 +220,18 @@ pub trait ImaskSet: IntoIterator + Sized {
 impl<I: IntoIterator> ImaskSet for I {}
 
 /// Represents areas on images. It's designed to efficiently support various image sizes.
-/// Both, TIncluded and TExcluded are expected to always be > 0 (except the first exclude might be 0)
+/// The values are expected to always be > 0 (except the first exclude might be 0)
 /// Included represents the number of pixels to include, excluded encodes the gap between two included ranges
 ///
 ///
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive))]
-pub struct SortedRanges<TIncluded, TExcluded = TIncluded> {
-    included: Vec<TIncluded>,
-    excluded: Vec<TExcluded>,
+pub struct SortedRanges<T> {
+    included: Vec<T>,
+    excluded: Vec<T>,
     bounds: Rect<u32>,
 }
-impl<TIncluded: UncheckedCast<u64>, TExcluded: UncheckedCast<u64>> Debug
-    for SortedRanges<TIncluded, TExcluded>
-{
+impl<T: UncheckedCast<u64>> Debug for SortedRanges<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SortedRanges")
             .field("bounds", &self.bounds)
@@ -247,16 +245,15 @@ impl<TIncluded: UncheckedCast<u64>, TExcluded: UncheckedCast<u64>> Debug
             .finish()
     }
 }
-struct Builder<TIncluded, TExcluded> {
+struct Builder<T> {
     cur_pos: u64,
-    included: Vec<TIncluded>,
-    excluded: Vec<TExcluded>,
+    included: Vec<T>,
+    excluded: Vec<T>,
 }
 
-impl<TIncluded, TExcluded> Builder<TIncluded, TExcluded>
+impl<T> Builder<T>
 where
-    TIncluded: TryFrom<u64, Error: Display>,
-    TExcluded: TryFrom<u64, Error: Display>,
+    T: TryFrom<u64, Error: Display>,
 {
     fn new<TRange>(first_range: TRange, size_hint: usize) -> Result<Self, io::Error>
     where
@@ -267,9 +264,9 @@ where
             first_range.end().try_into().map_err(invalid)?,
         );
         let first_len = create_checked(start_u64, end_u64)?;
-        let initial_offset = TExcluded::try_from(start_u64).map_err(invalid)?;
-        let mut included = Vec::<TIncluded>::with_capacity(size_hint);
-        let mut excluded = Vec::<TExcluded>::with_capacity(size_hint);
+        let initial_offset = T::try_from(start_u64).map_err(invalid)?;
+        let mut included = Vec::<T>::with_capacity(size_hint);
+        let mut excluded = Vec::<T>::with_capacity(size_hint);
         included.push(first_len);
         excluded.push(initial_offset);
         Ok(Self {
@@ -318,7 +315,7 @@ where
         self.cur_pos = end_u64;
         Ok(())
     }
-    fn build(self, bounds: Rect<u32>) -> SortedRanges<TIncluded, TExcluded> {
+    fn build(self, bounds: Rect<u32>) -> SortedRanges<T> {
         SortedRanges {
             included: self.included,
             excluded: self.excluded,
@@ -344,23 +341,21 @@ where
 /// (`new` takes no span) and `add` allows `start > merge_end || excluded.is_empty()`:
 /// the very first span initializes the merge window, equal starts/ends merge touching
 /// spans, and only `start < merge_end` (overlap) is an error.
-struct SortedRangesSpanBuilderInternal<TIncluded, TExcluded> {
+struct SortedRangesSpanBuilderInternal<T> {
     width_u64: u64,
     offset_x_u64: u64,
     offset_y_u64: u64,
     merge_start: u64,
     merge_end: u64,
     bounds: Rect<u32>,
-    excluded: Vec<TExcluded>,
-    included: Vec<TIncluded>,
+    excluded: Vec<T>,
+    included: Vec<T>,
 }
 
-impl<TIncluded, TExcluded> SortedRangesSpanBuilderInternal<TIncluded, TExcluded>
+impl<T> SortedRangesSpanBuilderInternal<T>
 where
-    TIncluded: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
-    IncompatibleSizeError: From<TExcluded::Error>,
-    TExcluded: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
-    IncompatibleSizeError: From<TIncluded::Error>,
+    T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
+    IncompatibleSizeError: From<T::Error>,
 {
     fn new(bounds: Rect<u32>, size_hint: usize) -> Self {
         Self {
@@ -375,10 +370,10 @@ where
         }
     }
 
-    fn add<T>(&mut self, span: Span<T>) -> Result<(), IncompatibleSizeError>
+    fn add<TSpan>(&mut self, span: Span<TSpan>) -> Result<(), IncompatibleSizeError>
     where
-        T: Copy + TryInto<u64>,
-        IncompatibleSizeError: From<T::Error>,
+        TSpan: Copy + TryInto<u64>,
+        IncompatibleSizeError: From<TSpan::Error>,
     {
         let global_y: u64 = span.y.try_into()?;
         // Spans are expected to always stay within the declared bounds
@@ -402,10 +397,10 @@ where
 
         if self.excluded.is_empty() || start > self.merge_end {
             if !self.excluded.is_empty() {
-                let included = TIncluded::try_from(self.merge_end - self.merge_start);
+                let included = T::try_from(self.merge_end - self.merge_start);
                 self.included.push(included?);
             }
-            let excluded = TExcluded::try_from(start - self.merge_end);
+            let excluded = T::try_from(start - self.merge_end);
             self.excluded.push(excluded?);
             self.merge_start = start;
             self.merge_end = end;
@@ -419,7 +414,7 @@ where
         Ok(())
     }
 
-    fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, PipelineError> {
+    fn build(self) -> Result<SortedRanges<T>, PipelineError> {
         if self.excluded.is_empty() {
             return Err(PipelineError::Empty);
         }
@@ -431,7 +426,7 @@ where
             bounds,
             ..
         } = self;
-        let include = TIncluded::try_from(merge_end - merge_start);
+        let include = T::try_from(merge_end - merge_start);
         included.push(include.map_err(IncompatibleSizeError::from)?);
         Ok(SortedRanges {
             included,
@@ -461,17 +456,15 @@ where
 ///     ranges
 /// );
 /// ```
-pub struct SortedRangesSpanBuilder<TIncluded, TExcluded = TIncluded> {
-    builder: SortedRangesSpanBuilderInternal<TIncluded, TExcluded>,
+pub struct SortedRangesSpanBuilder<T> {
+    builder: SortedRangesSpanBuilderInternal<T>,
     error: Option<IncompatibleSizeError>,
 }
 
-impl<TIncluded, TExcluded> SortedRangesSpanBuilder<TIncluded, TExcluded>
+impl<T> SortedRangesSpanBuilder<T>
 where
-    TIncluded: TryFrom<u64>,
-    IncompatibleSizeError: From<TIncluded::Error>,
-    TExcluded: TryFrom<u64>,
-    IncompatibleSizeError: From<TExcluded::Error>,
+    T: TryFrom<u64>,
+    IncompatibleSizeError: From<T::Error>,
 {
     pub fn new(bounds: Rect<u32>) -> Self {
         Self {
@@ -480,16 +473,16 @@ where
         }
     }
 
-    pub fn add<T: Copy + TryInto<u64>>(&mut self, span: Span<T>)
+    pub fn add<TSpan: Copy + TryInto<u64>>(&mut self, span: Span<TSpan>)
     where
-        IncompatibleSizeError: From<T::Error>,
+        IncompatibleSizeError: From<TSpan::Error>,
     {
         if self.error.is_none() {
             self.error = self.builder.add(span).err();
         }
     }
 
-    pub fn build(self) -> Result<SortedRanges<TIncluded, TExcluded>, PipelineError> {
+    pub fn build(self) -> Result<SortedRanges<T>, PipelineError> {
         if let Some(error) = self.error {
             return Err(error.into());
         }
@@ -497,8 +490,7 @@ where
     }
 }
 
-impl<T: SignedNonZeroable + UncheckedCast<u32> + Sub<Output = T>> From<Span<T>>
-    for SortedRanges<T, T>
+impl<T: SignedNonZeroable + UncheckedCast<u32> + Sub<Output = T>> From<Span<T>> for SortedRanges<T>
 where
     Rect<T>: From<Span<T>>,
 {
@@ -514,12 +506,12 @@ where
     }
 }
 
-impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
+impl<T> SortedRanges<T> {
     #[deprecated = "Use from_span instead, which automatically sets the correct bounds"]
     pub fn new<TRange>(r: NonZeroRange<TRange>, bounds: Rect<u32>) -> Self
     where
-        TRange: UncheckedCast<TIncluded> + UncheckedCast<TExcluded> + Sub<Output = TRange>,
-        TIncluded: TryFrom<u64>,
+        TRange: UncheckedCast<T> + Sub<Output = TRange>,
+        T: TryFrom<u64>,
     {
         assert!(bounds.x == 0);
         assert!(bounds.y == 0);
@@ -537,8 +529,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
                 Item: CreateRange<Item: TryInto<u64, Error: Display>>,
                 IntoIter: ImageDimension,
             >,
-        TIncluded: TryFrom<u64, Error: Display>,
-        TExcluded: TryFrom<u64, Error: Display>,
+        T: TryFrom<u64, Error: Display>,
     {
         let iter = iter.into_iter();
         let bounds = iter.bounds();
@@ -552,20 +543,17 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     ) -> Result<Self, io::Error>
     where
         TIter: IntoIterator<Item: CreateRange<Item: TryInto<u64, Error: Display>>>,
-        TIncluded: TryFrom<u64, Error: Display>,
-        TExcluded: TryFrom<u64, Error: Display>,
+        T: TryFrom<u64, Error: Display>,
     {
         Self::try_from_ordered_iter(iter.with_roi(bounds))
     }
-    pub fn try_from_span_iter<TIter, T>(iter: TIter) -> Result<Self, PipelineError>
+    pub fn try_from_span_iter<TIter, TSpan>(iter: TIter) -> Result<Self, PipelineError>
     where
-        TIter: IntoIterator<Item = Span<T>, IntoIter: ImageDimension>,
-        T: Copy + TryInto<u64>,
-        TIncluded: TryFrom<u64, Error: Display>,
-        TExcluded: TryFrom<u64, Error: Display>,
+        TIter: IntoIterator<Item = Span<TSpan>, IntoIter: ImageDimension>,
+        TSpan: Copy + TryInto<u64>,
+        T: TryFrom<u64, Error: Display>,
+        IncompatibleSizeError: From<TSpan::Error>,
         IncompatibleSizeError: From<T::Error>,
-        IncompatibleSizeError: From<TIncluded::Error>,
-        IncompatibleSizeError: From<TExcluded::Error>,
     {
         let iter = iter.into_iter();
         let bounds = iter.bounds();
@@ -575,8 +563,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             "width() must equal bounds().width"
         );
         let size_hint = iter.size_hint().0;
-        let mut builder =
-            SortedRangesSpanBuilderInternal::<TIncluded, TExcluded>::new(bounds, size_hint);
+        let mut builder = SortedRangesSpanBuilderInternal::<T>::new(bounds, size_hint);
         for span in iter {
             builder.add(span)?;
         }
@@ -584,24 +571,17 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     }
 
     #[cfg(feature = "async-io")]
-    pub(crate) fn from_parts(
-        included: Vec<TIncluded>,
-        excluded: Vec<TExcluded>,
-        bounds: Rect<u32>,
-    ) -> Self {
+    pub(crate) fn from_parts(included: Vec<T>, excluded: Vec<T>, bounds: Rect<u32>) -> Self {
         Self {
             bounds,
             excluded,
             included,
         }
     }
-    fn try_from_ordered_iter_roi_internal<TIter>(
-        iter: TIter,
-    ) -> Result<Builder<TIncluded, TExcluded>, io::Error>
+    fn try_from_ordered_iter_roi_internal<TIter>(iter: TIter) -> Result<Builder<T>, io::Error>
     where
         TIter: IntoIterator<Item: CreateRange<Item: TryInto<u64, Error: Display>>>,
-        TIncluded: TryFrom<u64, Error: Display>,
-        TExcluded: TryFrom<u64, Error: Display>,
+        T: TryFrom<u64, Error: Display>,
     {
         let mut iter = iter.into_iter();
         let Some(first_range) = iter.next() else {
@@ -631,91 +611,82 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             .expect("Constructors make sure, there is always at least one Range")
     }
 
-    pub fn iter_roi<T: CreateRange>(
+    pub fn iter_roi<TRange: CreateRange>(
         &self,
     ) -> SortedRangesIter<
-        std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
-        std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-        T,
+        std::iter::Copied<std::slice::Iter<'_, T>>,
+        std::iter::Copied<std::slice::Iter<'_, T>>,
+        TRange,
     >
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default + Copy + SignedNonZeroable + Add<Output = T::Item>,
+        T: UncheckedCast<TRange::Item>,
+        TRange::Item: Default + Copy + SignedNonZeroable + Add<Output = TRange::Item>,
     {
         SortedRangesIter::new(
             self.included.iter().copied(),
             self.excluded.iter().copied(),
-            T::Item::default(),
+            TRange::Item::default(),
             self.bounds,
         )
     }
-    pub fn iter_roi_owned<T: CreateRange>(
+    pub fn iter_roi_owned<TRange: CreateRange>(
         self,
-    ) -> SortedRangesIter<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>
+    ) -> SortedRangesIter<std::vec::IntoIter<T>, std::vec::IntoIter<T>, TRange>
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default + Copy + SignedNonZeroable + Add<Output = T::Item>,
+        T: UncheckedCast<TRange::Item>,
+        TRange::Item: Default + Copy + SignedNonZeroable + Add<Output = TRange::Item>,
     {
         SortedRangesIter::new(
             self.included.into_iter(),
             self.excluded.into_iter(),
-            T::Item::default(),
+            TRange::Item::default(),
             self.bounds,
         )
     }
-    pub fn spans<T>(
+    pub fn spans<TRange>(
         &self,
-    ) -> SortedRangesSpanIter<SortedRangesSliceIter<'_, TIncluded, TExcluded, NonZeroRange<T>>>
+    ) -> SortedRangesSpanIter<SortedRangesSliceIter<'_, T, T, NonZeroRange<TRange>>>
     where
-        NonZeroRange<T>: CreateRange<Item = T>,
-        TIncluded: UncheckedCast<T>,
-        TExcluded: UncheckedCast<T>,
-        T: Default + Copy + SignedNonZeroable + Add<Output = T>,
+        NonZeroRange<TRange>: CreateRange<Item = TRange>,
+        T: UncheckedCast<TRange>,
+        TRange: Default + Copy + SignedNonZeroable + Add<Output = TRange>,
     {
-        SortedRangesSpanIter::new(self.iter_roi::<NonZeroRange<T>>())
+        SortedRangesSpanIter::new(self.iter_roi::<NonZeroRange<TRange>>())
     }
 
-    pub fn spans_owned<T>(
+    pub fn spans_owned<TRange>(
         self,
     ) -> SortedRangesSpanIter<
-        SortedRangesIter<
-            std::vec::IntoIter<TIncluded>,
-            std::vec::IntoIter<TExcluded>,
-            NonZeroRange<T>,
-        >,
+        SortedRangesIter<std::vec::IntoIter<T>, std::vec::IntoIter<T>, NonZeroRange<TRange>>,
     >
     where
-        NonZeroRange<T>: CreateRange<Item = T>,
-        TIncluded: UncheckedCast<T>,
-        TExcluded: UncheckedCast<T>,
-        T: Default + Copy + SignedNonZeroable + Add<Output = T>,
+        NonZeroRange<TRange>: CreateRange<Item = TRange>,
+        T: UncheckedCast<TRange>,
+        TRange: Default + Copy + SignedNonZeroable + Add<Output = TRange>,
     {
-        SortedRangesSpanIter::new(self.iter_roi_owned::<NonZeroRange<T>>())
+        SortedRangesSpanIter::new(self.iter_roi_owned::<NonZeroRange<TRange>>())
     }
 
-    pub fn iter_global_with<T: CreateRange>(
+    pub fn iter_global_with<TRange: CreateRange>(
         &self,
         width: NonZeroU32,
     ) -> SortedRangesIterGlobal<
-        std::iter::Copied<std::slice::Iter<'_, TIncluded>>,
-        std::iter::Copied<std::slice::Iter<'_, TExcluded>>,
-        T,
+        std::iter::Copied<std::slice::Iter<'_, T>>,
+        std::iter::Copied<std::slice::Iter<'_, T>>,
+        TRange,
     >
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default
+        T: UncheckedCast<TRange::Item>,
+        TRange::Item: Default
             + Copy
             + SignedNonZeroable
-            + Add<Output = T::Item>
-            + Sub<Output = T::Item>
-            + Mul<Output = T::Item>
-            + Div<Output = T::Item>
-            + Rem<Output = T::Item>
+            + Add<Output = TRange::Item>
+            + Sub<Output = TRange::Item>
+            + Mul<Output = TRange::Item>
+            + Div<Output = TRange::Item>
+            + Rem<Output = TRange::Item>
             + Ord,
-        u32: UncheckedCast<T::Item>,
+        u32: UncheckedCast<TRange::Item>,
     {
         SortedRangesIterGlobal::new(
             self.included.iter().copied(),
@@ -727,23 +698,22 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
             self.bounds.y.cast_unchecked(),
         )
     }
-    pub fn iter_global_owned_with<T: CreateRange>(
+    pub fn iter_global_owned_with<TRange: CreateRange>(
         self,
         width: NonZeroU32,
-    ) -> SortedRangesIterGlobal<std::vec::IntoIter<TIncluded>, std::vec::IntoIter<TExcluded>, T>
+    ) -> SortedRangesIterGlobal<std::vec::IntoIter<T>, std::vec::IntoIter<T>, TRange>
     where
-        TIncluded: UncheckedCast<T::Item>,
-        TExcluded: UncheckedCast<T::Item>,
-        T::Item: Default
+        T: UncheckedCast<TRange::Item>,
+        TRange::Item: Default
             + Copy
             + SignedNonZeroable
-            + Add<Output = T::Item>
-            + Sub<Output = T::Item>
-            + Mul<Output = T::Item>
-            + Div<Output = T::Item>
-            + Rem<Output = T::Item>
+            + Add<Output = TRange::Item>
+            + Sub<Output = TRange::Item>
+            + Mul<Output = TRange::Item>
+            + Div<Output = TRange::Item>
+            + Rem<Output = TRange::Item>
             + Ord,
-        u32: UncheckedCast<T::Item>,
+        u32: UncheckedCast<TRange::Item>,
     {
         SortedRangesIterGlobal::new(
             self.included.into_iter(),
@@ -757,7 +727,7 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     }
 }
 
-impl<TIncluded, TExcluded> ImageDimension for SortedRanges<TIncluded, TExcluded> {
+impl<T> ImageDimension for SortedRanges<T> {
     fn bounds(&self) -> Rect<u32> {
         self.bounds
     }
@@ -819,14 +789,12 @@ mod tests {
     #[cfg(feature = "range-set-blaze-0_5")]
     #[test]
     fn combine_inline() {
-        let a = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [10u32..20, 30..40].with_roi(TEST_BOUNDS),
-        )
-        .unwrap();
-        let b = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [20u32..30, 41..45].with_roi(TEST_BOUNDS),
-        )
-        .unwrap();
+        let a =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..20, 30..40].with_roi(TEST_BOUNDS))
+                .unwrap();
+        let b =
+            SortedRanges::<u8>::try_from_ordered_iter([20u32..30, 41..45].with_roi(TEST_BOUNDS))
+                .unwrap();
 
         let b_iter = b.iter_roi::<RangeInclusive<u64>>();
         let a = a
@@ -858,10 +826,9 @@ mod tests {
 
     #[test]
     fn split_when_collection_becomes_bigger() {
-        let a = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [10u32..15, 30..35].with_roi(TEST_BOUNDS),
-        )
-        .unwrap();
+        let a =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..15, 30..35].with_roi(TEST_BOUNDS))
+                .unwrap();
 
         let a = a
             .map_inplace(|iter| {
@@ -882,7 +849,7 @@ mod tests {
 
     #[test]
     fn split_returns_none_when_empty() {
-        let a = SortedRanges::<u8, u8>::try_from_ordered_iter(
+        let a = SortedRanges::<u8>::try_from_ordered_iter(
             std::iter::once(10u32..15).with_roi(TEST_BOUNDS),
         )
         .unwrap();
@@ -895,10 +862,9 @@ mod tests {
 
     #[test]
     fn range_with_initial_offset() {
-        let encoded = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [10u32..20, 255..257].with_roi(TEST_BOUNDS),
-        )
-        .unwrap();
+        let encoded =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..20, 255..257].with_roi(TEST_BOUNDS))
+                .unwrap();
         assert_eq!(
             vec![10u64..=19, 255u64..=256],
             encoded.iter_roi_owned().collect::<Vec<_>>()
@@ -907,10 +873,9 @@ mod tests {
 
     #[test]
     fn owned_iterator() {
-        let encoded = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [10u32..20, 255..257].with_roi(TEST_BOUNDS),
-        )
-        .unwrap();
+        let encoded =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..20, 255..257].with_roi(TEST_BOUNDS))
+                .unwrap();
         let collected: Vec<_> = encoded.iter_roi_owned().collect();
         assert_eq!(2, collected.len());
         assert_eq!(10u64..=19, collected[0]);
@@ -918,16 +883,15 @@ mod tests {
     }
     #[test]
     fn assert_big_gap_causes_error() {
-        let error = SortedRanges::<u16, u8>::try_from_ordered_iter(
-            [10u32..20, 276..280].with_roi(TEST_BOUNDS),
-        )
-        .unwrap_err();
+        let error =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..20, 276..280].with_roi(TEST_BOUNDS))
+                .unwrap_err();
         assert!(error.to_string().contains("out of range"), "{error}");
     }
 
     #[test]
     fn assert_big_ranges_cause_error() {
-        let error = SortedRanges::<u8, u16>::try_from_ordered_iter(
+        let error = SortedRanges::<u8>::try_from_ordered_iter(
             core::iter::once(10u32..280).with_roi(TEST_BOUNDS),
         )
         .unwrap_err();
@@ -935,7 +899,7 @@ mod tests {
     }
     #[test]
     fn zero_ranges_cause_error() {
-        let error = SortedRanges::<u8, u8>::try_from_ordered_iter(
+        let error = SortedRanges::<u8>::try_from_ordered_iter(
             core::iter::once(10u32..10).with_roi(TEST_BOUNDS),
         )
         .unwrap_err();
@@ -944,19 +908,17 @@ mod tests {
 
     #[test]
     fn overlapping_cause_error() {
-        let error = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [10u32..12, 11..12].with_roi(TEST_BOUNDS),
-        )
-        .unwrap_err();
+        let error =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..12, 11..12].with_roi(TEST_BOUNDS))
+                .unwrap_err();
         assert!(error.to_string().contains("must be >"), "{error}");
     }
 
     #[test]
     fn iterate_with_different_output_types() {
-        let encoded = SortedRanges::<u8, u8>::try_from_ordered_iter(
-            [10u32..15, 30..35].with_roi(TEST_BOUNDS),
-        )
-        .unwrap();
+        let encoded =
+            SortedRanges::<u8>::try_from_ordered_iter([10u32..15, 30..35].with_roi(TEST_BOUNDS))
+                .unwrap();
 
         let as_range: Vec<_> = encoded.iter_roi::<Range<u64>>().collect();
         assert_eq!(vec![10u64..15, 30..35], as_range);

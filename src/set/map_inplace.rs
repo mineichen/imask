@@ -8,7 +8,7 @@ use crate::{
     SortedRangesSpanIter, Span, SpanToOffsetsIter, UncheckedCast,
 };
 
-impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
+impl<T> SortedRanges<T> {
     /// Transform the ranges in-place using a closure.
     /// The closure receives a SourceIterator and returns an iterator of `RangeInclusive<u64>`.
     /// Returns Some(SortedRanges) if non-empty, None if empty.
@@ -38,9 +38,8 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     pub fn map_inplace<TIter, TFun>(self, f: TFun) -> Option<Self>
     where
         TIter: Iterator<Item = RangeInclusive<u64>> + ImageDimension,
-        TFun: FnOnce(SourceIterator<TIncluded, TExcluded>) -> TIter,
-        TIncluded: TryFrom<u64, Error: Debug> + Clone,
-        TExcluded: TryFrom<u64, Error: Debug> + Clone,
+        TFun: FnOnce(SourceIterator<T>) -> TIter,
+        T: TryFrom<u64, Error: Debug> + Clone,
     {
         let original_len = self.included.len();
         // Rc is required, because we cannot restrict TIter by the Lifetime of the FnOnce-argument
@@ -56,11 +55,11 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
 
         let items = f(source);
         let new_bounds = items.bounds();
-        let offsets_iter = RangeToOffsetsIter::<_, TIncluded, TExcluded>::new(items);
-        let mut cache: VecDeque<(TExcluded, TIncluded)> = VecDeque::new();
+        let offsets_iter = RangeToOffsetsIter::<_, T, T>::new(items);
+        let mut cache: VecDeque<(T, T)> = VecDeque::new();
         let mut write_pos = 0;
 
-        let write_tuple = |col: &mut SortedRanges<_, _>, (excl, incl), write_pos: &mut usize| {
+        let write_tuple = |col: &mut SortedRanges<_>, (excl, incl), write_pos: &mut usize| {
             if *write_pos < col.included.len() {
                 col.excluded[*write_pos] = excl;
                 col.included[*write_pos] = incl;
@@ -147,9 +146,8 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     pub fn map_span_inplace<TIter, TFun>(self, f: TFun) -> Option<Self>
     where
         TIter: Iterator<Item = Span<u64>> + ImageDimension,
-        TFun: FnOnce(SortedRangesSpanIter<SourceIterator<TIncluded, TExcluded>>) -> TIter,
-        TIncluded: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
-        TExcluded: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
+        TFun: FnOnce(SortedRangesSpanIter<SourceIterator<T>>) -> TIter,
+        T: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
     {
         let original_len = self.included.len();
         let cell = Rc::new(RefCell::new((self, 0usize)));
@@ -177,11 +175,11 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
                 span.y - offset_y,
             )
         });
-        let offsets_iter = SpanToOffsetsIter::<_, TIncluded, TExcluded>::new(items, width);
-        let mut cache: VecDeque<(TExcluded, TIncluded)> = VecDeque::new();
+        let offsets_iter = SpanToOffsetsIter::<_, T, T>::new(items, width);
+        let mut cache: VecDeque<(T, T)> = VecDeque::new();
         let mut write_pos = 0;
 
-        let write_tuple = |col: &mut SortedRanges<_, _>, (excl, incl), write_pos: &mut usize| {
+        let write_tuple = |col: &mut SortedRanges<_>, (excl, incl), write_pos: &mut usize| {
             if *write_pos < col.included.len() {
                 col.excluded[*write_pos] = excl;
                 col.included[*write_pos] = incl;
@@ -226,18 +224,15 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     }
 }
 
-pub struct SourceIterator<TIncluded, TExcluded> {
-    cell: Rc<RefCell<(SortedRanges<TIncluded, TExcluded>, usize)>>,
+pub struct SourceIterator<T> {
+    cell: Rc<RefCell<(SortedRanges<T>, usize)>>,
     offset: u64,
     original_len: usize,
 }
 
-impl<TIncluded, TExcluded> FusedIterator for SourceIterator<TIncluded, TExcluded> where
-    Self: Iterator
-{
-}
+impl<T> FusedIterator for SourceIterator<T> where Self: Iterator {}
 
-impl<TIncluded, TExcluded> ImageDimension for SourceIterator<TIncluded, TExcluded> {
+impl<T> ImageDimension for SourceIterator<T> {
     fn width(&self) -> NonZero<u32> {
         self.cell.borrow().0.bounds.width
     }
@@ -247,10 +242,9 @@ impl<TIncluded, TExcluded> ImageDimension for SourceIterator<TIncluded, TExclude
     }
 }
 
-impl<TIncluded, TExcluded> Iterator for SourceIterator<TIncluded, TExcluded>
+impl<T> Iterator for SourceIterator<T>
 where
-    TIncluded: UncheckedCast<u64>,
-    TExcluded: UncheckedCast<u64>,
+    T: UncheckedCast<u64>,
 {
     type Item = RangeInclusive<u64>;
 
@@ -526,17 +520,7 @@ mod range_set_blaze_0_5_interop {
     use range_set_blaze_0_5::{SortedDisjoint, SortedStarts};
 
     use super::*;
-    impl<TIncluded, TExcluded> SortedStarts<u64> for SourceIterator<TIncluded, TExcluded>
-    where
-        TIncluded: UncheckedCast<u64>,
-        TExcluded: UncheckedCast<u64>,
-    {
-    }
+    impl<T> SortedStarts<u64> for SourceIterator<T> where T: UncheckedCast<u64> {}
 
-    impl<TIncluded, TExcluded> SortedDisjoint<u64> for SourceIterator<TIncluded, TExcluded>
-    where
-        TIncluded: UncheckedCast<u64>,
-        TExcluded: UncheckedCast<u64>,
-    {
-    }
+    impl<T> SortedDisjoint<u64> for SourceIterator<T> where T: UncheckedCast<u64> {}
 }

@@ -22,6 +22,8 @@ where
         }
     }
 
+    /// Returns accumulator, which is always applied to all items in the iter
+    /// If it was not fully consumed yet, the remaining items are also applied
     pub fn finish_all(mut self) -> A
     where
         I: FusedIterator,
@@ -30,6 +32,8 @@ where
         self.accumulator
     }
 
+    /// Returns accumulator applied to all images which were
+    /// consumed already, without making sure that self.parent is exhausted
     pub fn finish_partial(self) -> A {
         self.accumulator
     }
@@ -45,7 +49,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.parent
             .next()
-            .inspect(|item| (self.f)(&mut self.accumulator, &item))
+            .inspect(|item| (self.f)(&mut self.accumulator, item))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

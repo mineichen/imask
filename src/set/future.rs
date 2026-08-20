@@ -10,15 +10,14 @@ use crate::{CreateRange, ImageDimension};
 
 use super::{Builder, SortedRanges};
 
-impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
-    pub fn try_from_ordered_stream<TStream, T>(
+impl<T> SortedRanges<T> {
+    pub fn try_from_ordered_stream<TStream, TRange>(
         stream: TStream,
-    ) -> TryFromOrderedStreamFuture<TStream, TIncluded, TExcluded>
+    ) -> TryFromOrderedStreamFuture<TStream, T>
     where
-        TStream: Stream<Item = io::Result<T>>,
-        T: CreateRange<Item: TryInto<u64, Error: Display>>,
-        TIncluded: TryFrom<u64, Error: Display>,
-        TExcluded: TryFrom<u64, Error: Display>,
+        TStream: Stream<Item = io::Result<TRange>>,
+        TRange: CreateRange<Item: TryInto<u64, Error: Display>>,
+        T: TryFrom<u64, Error: Display>,
     {
         TryFromOrderedStreamFuture {
             stream,
@@ -27,21 +26,19 @@ impl<TIncluded, TExcluded> SortedRanges<TIncluded, TExcluded> {
     }
 }
 pin_project_lite::pin_project!(
-    pub struct TryFromOrderedStreamFuture<S, TIncluded, TExcluded> {
+    pub struct TryFromOrderedStreamFuture<S, T> {
         #[pin]
         stream: S,
-        builder: Option<Builder<TIncluded, TExcluded>>,
+        builder: Option<Builder<T>>,
     }
 );
-impl<S, T, TIncluded, TExcluded> std::future::Future
-    for TryFromOrderedStreamFuture<S, TIncluded, TExcluded>
+impl<S, T, TRange> std::future::Future for TryFromOrderedStreamFuture<S, T>
 where
-    S: Stream<Item = io::Result<T>> + ImageDimension,
-    T: CreateRange<Item: TryInto<u64, Error: Display>>,
-    TIncluded: TryFrom<u64, Error: Display>,
-    TExcluded: TryFrom<u64, Error: Display>,
+    S: Stream<Item = io::Result<TRange>> + ImageDimension,
+    TRange: CreateRange<Item: TryInto<u64, Error: Display>>,
+    T: TryFrom<u64, Error: Display>,
 {
-    type Output = std::io::Result<SortedRanges<TIncluded, TExcluded>>;
+    type Output = std::io::Result<SortedRanges<T>>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,
