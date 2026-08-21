@@ -187,24 +187,61 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn with_bounds(self, width: NonZeroU32, height: NonZeroU32) -> WithBounds<Self::IntoIter> {
         WithBounds::new(self.into_iter(), width, height)
     }
+    #[deprecated(
+        since = "0.0.1",
+        note = "use dilate_within, which allows specifying the region of interest"
+    )]
     fn dilate<T>(
         self,
         offset: <T as SignedNonZeroable>::NonZero,
-    ) -> Result<crate::span::DilateSpanIter<Self::IntoIter, T>, PipelineError>
+    ) -> Result<crate::span::DilateSpanIterAcc<WithRoi<Self::IntoIter>, T>, PipelineError>
     where
         T: Ord
             + Copy
             + Debug
             + Add<Output = T>
             + num_traits::SaturatingSub<Output = T>
-            + crate::CheckedAddSigned
             + num_traits::One
             + num_traits::Zero
             + SignedNonZeroable
-            + UncheckedCast<u32>,
-        Self::IntoIter: Iterator<Item = Span<T>> + Clone + ImageDimension,
+            + UncheckedCast<u32>
+            + UncheckedCast<u64>
+            + TryFrom<u64, Error: Into<IncompatibleSizeError>>,
+        u32: UncheckedCast<T>,
+        Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
     {
-        crate::span::DilateSpanIter::new(self.into_iter(), offset)
+        let iter = self.into_iter();
+        let radius: u32 = offset.into().cast_unchecked();
+        // Extending the declared input bounds keeps the "spans stay within bounds" contract
+        // valid for the dilation without changing the produced spans.
+        let roi = iter.bounds().expand(radius);
+        crate::span::DilateSpanIterAcc::new(iter.with_roi(roi), offset)
+    }
+
+    /// Dilates by `offset`, declaring `roi` as region of interest of the input.
+    ///
+    /// The input spans are expected to lie within `roi` (e.g. `source.bounds().expand(offset)`).
+    fn dilate_within<T>(
+        self,
+        offset: <T as SignedNonZeroable>::NonZero,
+        roi: Rect<u32>,
+    ) -> Result<crate::span::DilateSpanIterAcc<WithRoi<Self::IntoIter>, T>, PipelineError>
+    where
+        T: Ord
+            + Copy
+            + Debug
+            + Add<Output = T>
+            + num_traits::SaturatingSub<Output = T>
+            + num_traits::One
+            + num_traits::Zero
+            + SignedNonZeroable
+            + UncheckedCast<u32>
+            + UncheckedCast<u64>
+            + TryFrom<u64, Error: Into<IncompatibleSizeError>>,
+        u32: UncheckedCast<T>,
+        Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
+    {
+        crate::span::DilateSpanIterAcc::new(self.into_iter().with_roi(roi), offset)
     }
 
     #[cfg(feature = "range-set-blaze-0_5")]

@@ -82,60 +82,59 @@ fn bench_subtract(c: &mut Criterion) {
     group.finish();
 }
 
+fn dilate_union<I>(iter: I, radius: NonZero<u32>) -> DilateSpanIter<WithRoi<I>, u32>
+where
+    I: Iterator<Item = Span<u32>> + Clone + ImageDimension,
+{
+    let roi = iter.bounds().expand(radius.get());
+    DilateSpanIter::new(iter.with_roi(roi), radius).unwrap()
+}
+
+fn dilate_acc<I>(iter: I, radius: NonZero<u32>) -> DilateSpanIterAcc<WithRoi<I>, u32>
+where
+    I: Iterator<Item = Span<u32>> + ImageDimension,
+{
+    let roi = iter.bounds().expand(radius.get());
+    DilateSpanIterAcc::new(iter.with_roi(roi), radius).unwrap()
+}
+
 fn bench_dilate(c: &mut Criterion) {
     let mut group = c.benchmark_group("dilate");
 
     for radius in [1u32, 3, 5] {
-        group.bench_function(format!("50x50_r{radius}"), |bencher| {
+        group.bench_function(format!("50x50_r{radius}_union"), |bencher| {
             let r = rect(50, 50, 50, 50);
+            let radius = NonZero::new(radius).unwrap();
             bencher.iter(|| {
-                consume(
-                    r.into_spans()
-                        .with_bounds(W, H)
-                        .dilate::<u32>(NonZero::new(radius).unwrap())
-                        .unwrap(),
-                );
+                consume(dilate_union(r.into_spans().with_bounds(W, H), radius));
             });
         });
     }
 
     for radius in [1u32, 3, 5] {
-        group.bench_function(format!("200x200_r{radius}"), |bencher| {
+        group.bench_function(format!("200x200_r{radius}_union"), |bencher| {
             let r = rect(100, 100, 200, 200);
+            let radius = NonZero::new(radius).unwrap();
             bencher.iter(|| {
-                consume(
-                    r.into_spans()
-                        .with_bounds(W, H)
-                        .dilate::<u32>(NonZero::new(radius).unwrap())
-                        .unwrap(),
-                );
+                consume(dilate_union(r.into_spans().with_bounds(W, H), radius));
             });
         });
     }
 
-    group.bench_function("edge_touching_50x50_r2", |bencher| {
+    group.bench_function("edge_touching_50x50_r2_union", |bencher| {
         let r = rect(0, 0, 50, 50);
+        let radius = NonZero::new(2).unwrap();
         bencher.iter(|| {
-            consume(
-                r.into_spans()
-                    .with_bounds(W, H)
-                    .dilate::<u32>(NonZero::new(2).unwrap())
-                    .unwrap(),
-            );
+            consume(dilate_union(r.into_spans().with_bounds(W, H), radius));
         });
     });
 
     for radius in [1u32, 3, 5] {
         group.bench_function(format!("50x50_r{radius}_acc"), |bencher| {
             let r = rect(50, 50, 50, 50);
+            let radius = NonZero::new(radius).unwrap();
             bencher.iter(|| {
-                consume(
-                    DilateSpanIterAcc::new(
-                        r.into_spans().with_bounds(W, H),
-                        NonZero::new(radius).unwrap(),
-                    )
-                    .unwrap(),
-                );
+                consume(dilate_acc(r.into_spans().with_bounds(W, H), radius));
             });
         });
     }
@@ -143,50 +142,34 @@ fn bench_dilate(c: &mut Criterion) {
     for radius in [1u32, 3, 5] {
         group.bench_function(format!("200x200_r{radius}_acc"), |bencher| {
             let r = rect(100, 100, 200, 200);
+            let radius = NonZero::new(radius).unwrap();
             bencher.iter(|| {
-                consume(
-                    DilateSpanIterAcc::new(
-                        r.into_spans().with_bounds(W, H),
-                        NonZero::new(radius).unwrap(),
-                    )
-                    .unwrap(),
-                );
+                consume(dilate_acc(r.into_spans().with_bounds(W, H), radius));
             });
         });
     }
 
     group.bench_function("edge_touching_50x50_r2_acc", |bencher| {
         let r = rect(0, 0, 50, 50);
+        let radius = NonZero::new(2).unwrap();
         bencher.iter(|| {
-            consume(
-                DilateSpanIterAcc::new(r.into_spans().with_bounds(W, H), NonZero::new(2).unwrap())
-                    .unwrap(),
-            );
+            consume(dilate_acc(r.into_spans().with_bounds(W, H), radius));
         });
     });
 
-    group.bench_function("box_800x800_r200", |bencher| {
+    group.bench_function("box_800x800_r200_union", |bencher| {
         let r = rect(200, 200, 800, 800);
+        let radius = NonZero::new(200).unwrap();
         bencher.iter(|| {
-            consume(
-                r.into_spans()
-                    .with_bounds(W, H)
-                    .dilate::<u32>(NonZero::new(200).unwrap())
-                    .unwrap(),
-            );
+            consume(dilate_union(r.into_spans().with_bounds(W, H), radius));
         });
     });
 
     group.bench_function("box_800x800_r200_acc", |bencher| {
         let r = rect(200, 200, 800, 800);
+        let radius = NonZero::new(200).unwrap();
         bencher.iter(|| {
-            consume(
-                DilateSpanIterAcc::new(
-                    r.into_spans().with_bounds(W, H),
-                    NonZero::new(200).unwrap(),
-                )
-                .unwrap(),
-            );
+            consume(dilate_acc(r.into_spans().with_bounds(W, H), radius));
         });
     });
 
@@ -199,13 +182,11 @@ fn bench_pipeline(c: &mut Criterion) {
     group.bench_function("dilate_clip_ranges", |bencher| {
         let r = rect(50, 50, 50, 50);
         let clip_bounds = rect(0, 0, 200, 200);
+        let radius = NonZero::new(3).unwrap();
         bencher.iter(|| {
             consume(
                 ClipSpanIter::new(
-                    r.into_spans()
-                        .with_bounds(W, H)
-                        .dilate::<u32>(NonZero::new(3).unwrap())
-                        .unwrap(),
+                    dilate_union(r.into_spans().with_bounds(W, H), radius),
                     clip_bounds,
                 )
                 .into_ranges::<Range<u32>>(),
@@ -217,13 +198,11 @@ fn bench_pipeline(c: &mut Criterion) {
         let a = rect(10, 10, 30, 30).into_spans();
         let b = rect(60, 60, 30, 30).into_spans();
         let clip_bounds = rect(0, 0, 200, 200);
+        let radius = NonZero::new(2).unwrap();
         bencher.iter(|| {
             consume(
                 ClipSpanIter::new(
-                    Union::new(a.clone(), b.clone())
-                        .with_bounds(W, H)
-                        .dilate::<u32>(NonZero::new(2).unwrap())
-                        .unwrap(),
+                    dilate_union(Union::new(a.clone(), b.clone()).with_bounds(W, H), radius),
                     clip_bounds,
                 )
                 .into_ranges::<Range<u32>>(),
@@ -250,13 +229,11 @@ fn bench_pipeline(c: &mut Criterion) {
     group.bench_function("dilate_clip_ranges_large", |bencher| {
         let r = rect(100, 100, 200, 200);
         let clip_bounds = rect(0, 0, 500, 500);
+        let radius = NonZero::new(5).unwrap();
         bencher.iter(|| {
             consume(
                 ClipSpanIter::new(
-                    r.into_spans()
-                        .with_bounds(W, H)
-                        .dilate::<u32>(NonZero::new(5).unwrap())
-                        .unwrap(),
+                    dilate_acc(r.into_spans().with_bounds(W, H), radius),
                     clip_bounds,
                 )
                 .into_ranges::<Range<u32>>(),

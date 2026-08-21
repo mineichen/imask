@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    num::NonZeroU32,
     ops::{Add, Sub},
 };
 
@@ -137,5 +138,24 @@ where {
         T: Debug + Ord + Add<Output = T> + Copy,
     {
         crate::span::RectSpanIter::new(self)
+    }
+}
+
+impl Rect<u32> {
+    /// Expands the rect by `radius` on all sides.
+    ///
+    /// Left/top are clamped at 0 (no underflow), right/bottom saturate at `u32::MAX`,
+    /// so the result always contains `self`.
+    pub fn expand(self, radius: u32) -> Self {
+        let x = self.x.saturating_sub(radius);
+        let y = self.y.saturating_sub(radius);
+        let x_end = self.x.saturating_add(self.width.get()).saturating_add(radius);
+        let y_end = self.y.saturating_add(self.height.get()).saturating_add(radius);
+        Self::new(
+            x,
+            y,
+            NonZeroU32::new(x_end - x).expect("x_end > x because width is non-zero"),
+            NonZeroU32::new(y_end - y).expect("y_end > y because height is non-zero"),
+        )
     }
 }
