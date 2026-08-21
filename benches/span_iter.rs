@@ -125,6 +125,71 @@ fn bench_dilate(c: &mut Criterion) {
         });
     });
 
+    for radius in [1u32, 3, 5] {
+        group.bench_function(format!("50x50_r{radius}_acc"), |bencher| {
+            let r = rect(50, 50, 50, 50);
+            bencher.iter(|| {
+                consume(
+                    DilateSpanIterAcc::new(
+                        r.into_spans().with_bounds(W, H),
+                        NonZero::new(radius).unwrap(),
+                    )
+                    .unwrap(),
+                );
+            });
+        });
+    }
+
+    for radius in [1u32, 3, 5] {
+        group.bench_function(format!("200x200_r{radius}_acc"), |bencher| {
+            let r = rect(100, 100, 200, 200);
+            bencher.iter(|| {
+                consume(
+                    DilateSpanIterAcc::new(
+                        r.into_spans().with_bounds(W, H),
+                        NonZero::new(radius).unwrap(),
+                    )
+                    .unwrap(),
+                );
+            });
+        });
+    }
+
+    group.bench_function("edge_touching_50x50_r2_acc", |bencher| {
+        let r = rect(0, 0, 50, 50);
+        bencher.iter(|| {
+            consume(
+                DilateSpanIterAcc::new(r.into_spans().with_bounds(W, H), NonZero::new(2).unwrap())
+                    .unwrap(),
+            );
+        });
+    });
+
+    group.bench_function("box_800x800_r200", |bencher| {
+        let r = rect(200, 200, 800, 800);
+        bencher.iter(|| {
+            consume(
+                r.into_spans()
+                    .with_bounds(W, H)
+                    .dilate::<u32>(NonZero::new(200).unwrap())
+                    .unwrap(),
+            );
+        });
+    });
+
+    group.bench_function("box_800x800_r200_acc", |bencher| {
+        let r = rect(200, 200, 800, 800);
+        bencher.iter(|| {
+            consume(
+                DilateSpanIterAcc::new(
+                    r.into_spans().with_bounds(W, H),
+                    NonZero::new(200).unwrap(),
+                )
+                .unwrap(),
+            );
+        });
+    });
+
     group.finish();
 }
 
