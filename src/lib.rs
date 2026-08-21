@@ -9,6 +9,7 @@ mod create_range;
 #[cfg(feature = "async-io")]
 mod io;
 mod map;
+mod maybe_result;
 mod non_zero;
 mod pipeline_error;
 mod rect;
@@ -27,6 +28,7 @@ pub use create_range::*;
 #[cfg(feature = "async-io")]
 pub use io::*;
 pub use map::*;
+pub use maybe_result::*;
 pub use non_zero::*;
 pub use pipeline_error::*;
 pub use rect::*;

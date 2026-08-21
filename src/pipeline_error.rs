@@ -35,6 +35,12 @@ pub enum PipelineError {
     IncompatibleSize(#[from] IncompatibleSizeError),
 }
 
+impl From<std::convert::Infallible> for PipelineError {
+    fn from(_value: std::convert::Infallible) -> Self {
+        unreachable!("Infallible cannot be constructed")
+    }
+}
+
 impl PipelineError {
     /// Converts an [`PipelineError::Empty`] into `Ok(None)` while propagating an
     /// [`PipelineError::IncompatibleSize`] as `Err`.

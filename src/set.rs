@@ -49,6 +49,10 @@ pub(crate) type SortedRangesSliceIter<'a, TIncluded, TExcluded, T> = SortedRange
     T,
 >;
 
+pub(crate) type SortedRangesOwnedSpanIter<T, TRange> = SortedRangesSpanIter<
+    SortedRangesIter<std::vec::IntoIter<T>, std::vec::IntoIter<T>, NonZeroRange<TRange>>,
+>;
+
 pub trait ImaskSet: IntoIterator + Sized {
     // /// # Panics
     // /// If the previous RowIterator is kept when getting the next RowIterator
@@ -111,11 +115,23 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::Intersect::new(self.into_iter(), other.into_iter())
     }
 
-    fn union_all<T>(self) -> Result<crate::span::UnionAll<Self::Item>, PipelineError>
+    #[allow(clippy::type_complexity)]
+    fn union_all(
+        self,
+    ) -> Result<
+        crate::span::UnionAll<
+            <<Self::Item as crate::MaybeResult>::Ok as std::iter::IntoIterator>::IntoIter,
+        >,
+        PipelineError,
+    >
     where
-        Self: ImageDimension,
-        T: Ord + Copy + std::fmt::Debug,
-        Self::Item: Iterator<Item = Span<T>>,
+        Self::Item: crate::MaybeResult<
+                Ok: std::iter::IntoIterator<
+                    Item: Ord + Copy + std::fmt::Debug,
+                    IntoIter: ImageDimension,
+                >,
+                Err: Into<PipelineError>,
+            >,
     {
         crate::span::UnionAll::new(self)
     }
@@ -654,17 +670,55 @@ impl<T> SortedRanges<T> {
         SortedRangesSpanIter::new(self.iter_roi::<NonZeroRange<TRange>>())
     }
 
-    pub fn spans_owned<TRange>(
-        self,
-    ) -> SortedRangesSpanIter<
-        SortedRangesIter<std::vec::IntoIter<T>, std::vec::IntoIter<T>, NonZeroRange<TRange>>,
-    >
+    pub fn spans_owned<TRange>(self) -> SortedRangesOwnedSpanIter<T, TRange>
     where
         NonZeroRange<TRange>: CreateRange<Item = TRange>,
         T: UncheckedCast<TRange>,
         TRange: Default + Copy + SignedNonZeroable + Add<Output = TRange>,
     {
         SortedRangesSpanIter::new(self.iter_roi_owned::<NonZeroRange<TRange>>())
+    }
+
+    /// Like [`SortedRanges::spans_owned`], but verifies upfront that all
+    /// reconstructed coordinates are representable in `TRange`.
+    ///
+    /// [`SortedRanges::spans_owned`] and [`spans`](SortedRanges::spans)
+    /// will eventually drop support for a generic parameter and just return
+    /// Span<T>. This method instead validates, via the [`ImageDimension`]
+    /// bounds, that every value produced while iterating fits `TRange`.
+    ///
+    /// This allows e.g. producing `Span<u16>` from a `SortedRanges<u32>`, as
+    /// long as its bounds are small enough.
+    ///
+    /// # Errors
+    /// Returns an [`IncompatibleSizeError`] if
+    /// `bounds.x + bounds.width` > TRange::MAX or
+    /// `bounds.y + bounds.height` > TRange::MAX
+    pub fn try_into_spans<TRange>(
+        self,
+    ) -> Result<SortedRangesOwnedSpanIter<T, TRange>, IncompatibleSizeError>
+    where
+        NonZeroRange<TRange>: CreateRange<Item = TRange>,
+        T: UncheckedCast<TRange> + UncheckedCast<u64>,
+        TRange: Default + Copy + SignedNonZeroable + Add<Output = TRange> + TryFrom<u64>,
+        IncompatibleSizeError: From<TRange::Error>,
+    {
+        let width = u64::from(self.bounds.width.get());
+        let x_end = u64::from(self.bounds.x) + width;
+        let y_end = u64::from(self.bounds.y) + u64::from(self.bounds.height.get());
+        // Final value of the flattened position accumulator; the row-cut
+        // position can exceed it by up to one row width.
+        let flat_end = self
+            .included
+            .iter()
+            .chain(&self.excluded)
+            .map(|&len| UncheckedCast::<u64>::cast_unchecked(len))
+            .sum::<u64>()
+            + width;
+        for value in [flat_end, x_end, y_end] {
+            TRange::try_from(value)?;
+        }
+        Ok(self.spans_owned::<TRange>())
     }
 
     pub fn iter_global_with<TRange: CreateRange>(
@@ -736,6 +790,36 @@ impl<T> ImageDimension for SortedRanges<T> {
     }
 }
 
+/// Iterate over the [`Span`]s of a [`SortedRanges`] by value, equivalent to
+/// [`SortedRanges::spans_owned::<T>`](SortedRanges::spans_owned).
+///
+/// This makes [`SortedRanges`] usable everywhere an
+/// `IntoIterator<Item = Span<T>>` is accepted, e.g. as an item of
+/// [`ImaskSet::union_all`](crate::ImaskSet::union_all) or of the outer
+/// iterator of [`UnionAll::new`](crate::span::UnionAll::new).
+impl<T> std::iter::IntoIterator for SortedRanges<T>
+where
+    T: Ord
+        + Copy
+        + Debug
+        + Default
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Mul<Output = T>
+        + Div<Output = T>
+        + Rem<Output = T>
+        + SignedNonZeroable
+        + UncheckedCast<T>,
+    u32: UncheckedCast<T>,
+{
+    type Item = Span<T>;
+    type IntoIter = SortedRangesOwnedSpanIter<T, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.spans_owned::<T>()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::{Range, RangeInclusive};
@@ -771,6 +855,18 @@ mod tests {
                 },
             ),
             spans
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn into_iter_matches_spans_owned() -> TestResult {
+        let input = SortedRanges::<u32>::try_from_ordered_iter(
+            [0..1000u32, 1001..2000].with_roi(TEST_BOUNDS),
+        )?;
+        assert_eq!(
+            input.clone().spans_owned::<u32>().collect::<Vec<_>>(),
+            input.into_iter().collect::<Vec<_>>()
         );
         Ok(())
     }

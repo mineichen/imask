@@ -130,14 +130,35 @@ where
     }
 }
 
-struct ShiftedSpanIter<I, T>
-where
-    I: Iterator<Item = Span<T>>,
-    T: Ord + Copy + Debug + Add<Output = T>,
-{
+struct ShiftedSpanIter<I, T> {
     parent: I,
     x_offset: T,
     y_shift_unsigned: T,
+}
+
+// This is not a correct implementation!! This is expected to vanish soon
+impl<I, T> ImageDimension for ShiftedSpanIter<I, T>
+where
+    I: ImageDimension + Iterator<Item = Span<T>>,
+    T: Copy + Add<Output = T> + UncheckedCast<u32> + SignedNonZeroable,
+{
+    fn bounds(&self) -> Rect<u32> {
+        let parent_bounds = self.parent.bounds();
+        let x_offset = self.x_offset.cast_unchecked();
+        let y_shift = self.y_shift_unsigned.cast_unchecked();
+
+        let x = parent_bounds.x.saturating_sub(x_offset);
+        let y = parent_bounds.y.saturating_sub(y_shift);
+        let width = u32::create_non_zero(parent_bounds.width.get() + 2 * x_offset)
+            .expect("dilated width is always non-zero");
+        let height = parent_bounds.height;
+
+        Rect::new(x, y, width, height)
+    }
+
+    fn width(&self) -> std::num::NonZero<u32> {
+        self.bounds().width
+    }
 }
 
 impl<I, T> Iterator for ShiftedSpanIter<I, T>
