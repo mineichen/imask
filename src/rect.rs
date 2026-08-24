@@ -96,6 +96,27 @@ impl<T: SignedNonZeroable> Rect<T> {
         }
     }
 
+    /// Largest rect contained in `self` and `other`, or `None` if they don't overlap
+    /// (touching edges don't overlap).
+    pub fn intersection(&self, other: &Self) -> Option<Self>
+    where
+        T: Copy + Ord + Add<Output = T> + Sub<Output = T>,
+    {
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        let x_end = (self.x + self.width.into()).min(other.x + other.width.into());
+        let y_end = (self.y + self.height.into()).min(other.y + other.height.into());
+        if x_end <= x || y_end <= y {
+            return None;
+        }
+        Some(Self {
+            x,
+            y,
+            width: T::create_non_zero(x_end - x).expect("Checked above"),
+            height: T::create_non_zero(y_end - y).expect("Checked above"),
+        })
+    }
+
     pub fn range_x(&self) -> NonZeroRange<T>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
@@ -157,5 +178,50 @@ impl Rect<u32> {
             NonZeroU32::new(x_end - x).expect("x_end > x because width is non-zero"),
             NonZeroU32::new(y_end - y).expect("y_end > y because height is non-zero"),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NON_ZERO_10: NonZeroU32 = NonZeroU32::new(10).unwrap();
+
+    #[test]
+    fn intersection_overlapping() {
+        let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10);
+        let b = Rect::new(5u32, 5, NON_ZERO_10, NON_ZERO_10);
+        let expected =
+            Rect::new(5u32, 5, NonZeroU32::new(5).unwrap(), NonZeroU32::new(5).unwrap());
+        assert_eq!(Some(expected), a.intersection(&b));
+        assert_eq!(Some(expected), b.intersection(&a));
+    }
+
+    #[test]
+    fn intersection_contained() {
+        let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10);
+        let b = Rect::new(
+            2u32,
+            3,
+            NonZeroU32::new(4).unwrap(),
+            NonZeroU32::new(2).unwrap(),
+        );
+        assert_eq!(Some(b), a.intersection(&b));
+        assert_eq!(Some(b), b.intersection(&a));
+    }
+
+    #[test]
+    fn intersection_disjoint() {
+        let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10);
+        let b = Rect::new(20u32, 20, NON_ZERO_10, NON_ZERO_10);
+        assert_eq!(None, a.intersection(&b));
+        assert_eq!(None, b.intersection(&a));
+    }
+
+    #[test]
+    fn intersection_touching_edge_is_none() {
+        let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10);
+        let b = Rect::new(10u32, 0, NON_ZERO_10, NON_ZERO_10);
+        assert_eq!(None, a.intersection(&b));
     }
 }

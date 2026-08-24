@@ -1,7 +1,10 @@
-use std::num::{NonZero, NonZeroU32};
 use std::ops::Range;
+use std::{
+    hint::black_box,
+    num::{NonZero, NonZeroU32},
+};
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use imask::*;
 

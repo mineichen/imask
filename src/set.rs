@@ -220,7 +220,10 @@ pub trait ImaskSet: IntoIterator + Sized {
 
     /// Dilates by `offset`, declaring `roi` as region of interest of the input.
     ///
-    /// The input spans are expected to lie within `roi` (e.g. `source.bounds().expand(offset)`).
+    /// The effective region of interest is the intersection of `roi` with the bounds the
+    /// input declares ([`ImageDimension::bounds`]); if they don't overlap,
+    /// [`PipelineError::Empty`] is returned. Input spans (partially) outside that region
+    /// are clipped — spans entirely outside dilate to nothing.
     fn dilate_within<T>(
         self,
         offset: <T as SignedNonZeroable>::NonZero,
@@ -241,7 +244,12 @@ pub trait ImaskSet: IntoIterator + Sized {
         u32: UncheckedCast<T>,
         Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
     {
-        crate::span::DilateSpanIterAcc::new(self.into_iter().with_roi(roi), offset)
+        let iter = self.into_iter();
+        let roi = iter
+            .bounds()
+            .intersection(&roi)
+            .ok_or(PipelineError::Empty)?;
+        crate::span::DilateSpanIterAcc::new(iter.with_roi(roi), offset)
     }
 
     #[cfg(feature = "range-set-blaze-0_5")]

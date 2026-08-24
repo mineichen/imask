@@ -195,58 +195,85 @@ where
 
 /// Maps input span x-ranges to the coverage-index ranges of [`DilateSpanIterAcc`].
 ///
-/// A strategy encapsulates how dilation transforms x coordinates: [`Self::check`] verifies
-/// upfront — based on `parent.bounds()` — that every index it produces is representable in
-/// `T`, so [`Self::apply`] can use plain, unchecked arithmetic.
+/// A strategy encapsulates how dilation transforms x coordinates — including how to deal
+/// with input spans outside the input bounds `outer`: [`Self::compute_bounds`] derives the
+/// coverage bounds from `outer` and rejects any combination whose dilated coordinates
+/// don't fit `u32`, so [`Self::apply`] can use plain, unchecked arithmetic.
 pub trait DilateStrategy<T> {
-    /// Returns an error if the coordinates this strategy produces for spans within `bounds`
-    /// (which the parent iterator guarantees) are not representable in `T`.
-    fn check(&self, bounds: Rect<u32>) -> Result<(), IncompatibleSizeError>;
-    /// Maps the x-range of an input span to its dilated counterpart in the coverage (and
-    /// output) coordinate space of [`DilateSpanIterAcc`].
-    fn apply(&self, range: Range<T>) -> Range<T>;
+    /// Computes the bounds the dilated spans of inputs within `outer` occupy — `outer`
+    /// dilated by the radius — or an error if they don't fit `u32`.
+    fn compute_bounds(&self, outer: Rect<u32>) -> Result<Rect<u32>, PipelineError>;
+    /// Maps an input span — in original coordinates, possibly outside the input bounds —
+    /// to its dilated counterpart in absolute coordinates, or `None` if the span
+    /// contributes nothing.
+    ///
+    /// Handling of out-of-bounds spans is the strategy's decision: [`DilateInPlace`]
+    /// (constructed with the input bounds' x-range) clips and returns `None` for spans
+    /// entirely outside, while [`DilateTranslated`] stays branch- and check-free by not
+    /// clipping at all — it requires input spans within the input bounds. The returned
+    /// `y` steers the sliding window (the span influences output rows
+    /// `[y - offset, y + offset]`): [`DilateInPlace`] keeps it unchanged,
+    /// [`DilateTranslated`] shifts it by `+radius`.
+    fn apply(&self, span: Span<T>) -> Option<Span<T>>;
 }
 
 /// [`DilateStrategy`] keeping original (in-place) x coordinates — behaves like plain
 /// dilation: `start` saturates at 0, `end` grows by `radius`.
+///
+/// [`DilateStrategy::apply`] clips input spans to `outer_x` (the x-range of the input
+/// bounds, taken as constructor argument): spans (partially) outside contribute their
+/// overlap, spans entirely outside become `None`.
 pub struct DilateInPlace<T> {
     radius: T,
+    /// X-range of the input bounds input spans are clipped to.
+    outer_x: Range<T>,
 }
 
 impl<T> DilateInPlace<T> {
-    pub fn new(radius: T) -> Self {
-        Self { radius }
+    /// `outer_x`: x-range of the input bounds (e.g. of `iter.bounds()`), input spans are
+    /// clipped to.
+    pub fn new(radius: T, outer_x: Range<T>) -> Self {
+        Self { radius, outer_x }
     }
 }
 
 impl<T> DilateStrategy<T> for DilateInPlace<T>
 where
-    T: Copy + Add<Output = T> + SaturatingSub<Output = T> + UncheckedCast<u32>,
+    T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + UncheckedCast<u32>,
     T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
 {
-    fn check(&self, bounds: Rect<u32>) -> Result<(), IncompatibleSizeError> {
-        // The largest coordinate is the dilated end `bounds.x + bounds.width + radius`
-        // (`end + radius` of any in-bounds span never exceeds `bounds.end + radius`).
-        ensure_representable::<T>(
-            u64::from(bounds.x)
-                + u64::from(bounds.width.get())
-                + u64::from(UncheckedCast::<u32>::cast_unchecked(self.radius)),
-        )
+    fn compute_bounds(&self, outer: Rect<u32>) -> Result<Rect<u32>, PipelineError> {
+        let radius = UncheckedCast::<u32>::cast_unchecked(self.radius);
+        let (x, width) = calculate_bound_dim(outer.x, outer.width, radius)?;
+        let (y, height) = calculate_bound_dim(outer.y, outer.height, radius)?;
+        Ok(Rect::new(x, y, width, height))
     }
 
     #[inline]
-    fn apply(&self, range: Range<T>) -> Range<T> {
-        range.start.saturating_sub(&self.radius)..range.end + self.radius
+    fn apply(&self, span: Span<T>) -> Option<Span<T>> {
+        // Clip to `outer_x` first — dilation of nothing is nothing — then dilate.
+        let start = span.x.start.max(self.outer_x.start);
+        let end = span.x.end.min(self.outer_x.end);
+        if start >= end {
+            return None; // entirely outside the input bounds
+        }
+        Some(Span {
+            x: NonZeroRange::new_unchecked(start.saturating_sub(&self.radius)..end + self.radius),
+            y: span.y,
+        })
     }
 }
 
-/// [`DilateStrategy`] adding `2 * radius` to the end: the dilated ranges are translated by
-/// `radius` in x direction, so `start` needs no underflow handling.
+/// [`DilateStrategy`] translating the dilated spans by `+radius` — in x and y alike —
+/// so `start` needs no underflow handling and nothing saturates at the top/left edges.
 ///
-/// The output spans (and [`ImageDimension::bounds`]) of the iterator are translated by
-/// `+radius` compared to [`DilateInPlace`]. It only checks that the translated end
-/// `new_bounds.width + new_bounds.x` (= `bounds.x + bounds.width + 2 * radius`) is
-/// representable in `T`.
+/// An input span `[start, end)` at row `y` maps to `[start, end + 2 * radius]` influencing
+/// output rows `[y, y + 2 * radius]`: a single input row becomes `2 * radius + 1` rows.
+/// Because nothing is clipped or saturated, a subsequent erosion can subtract `radius`
+/// again without leaving the bounds — unlike [`DilateInPlace`], which loses the top/left
+/// dilation at the image edges. To stay free of any clipping overhead,
+/// [`DilateStrategy::apply`] does not clip: input spans must lie within the input bounds
+/// (violations only surface as debug-mode overflow panics).
 pub struct DilateTranslated<T> {
     radius: T,
 }
@@ -259,19 +286,33 @@ impl<T> DilateTranslated<T> {
 
 impl<T> DilateStrategy<T> for DilateTranslated<T>
 where
-    T: Copy + Add<Output = T> + UncheckedCast<u32>,
+    T: Ord + Copy + Debug + Add<Output = T> + UncheckedCast<u32>,
     T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
 {
-    fn check(&self, bounds: Rect<u32>) -> Result<(), IncompatibleSizeError> {
-        ensure_representable::<T>(
-            u64::from(bounds.x)
-                + u64::from(bounds.width.get())
-                + 2 * u64::from(UncheckedCast::<u32>::cast_unchecked(self.radius)),
-        )
+    fn compute_bounds(&self, outer: Rect<u32>) -> Result<Rect<u32>, PipelineError> {
+        let radius = UncheckedCast::<u32>::cast_unchecked(self.radius);
+        // apply keeps `start` as-is and only grows the end by `2 * radius` — in x and y
+        // alike. All arithmetic happens widened in `u64`.
+        let x_end = u64::from(outer.x) + u64::from(outer.width.get()) + 2 * u64::from(radius);
+        let y_end = u64::from(outer.y) + u64::from(outer.height.get()) + 2 * u64::from(radius);
+        let width =
+            u32::try_from(x_end - u64::from(outer.x)).map_err(|_| IntErrorKind::PosOverflow)?;
+        let height =
+            u32::try_from(y_end - u64::from(outer.y)).map_err(|_| IntErrorKind::PosOverflow)?;
+        Ok(Rect::new(
+            outer.x,
+            outer.y,
+            NonZeroU32::new(width).ok_or(IntErrorKind::PosOverflow)?,
+            NonZeroU32::new(height).ok_or(IntErrorKind::PosOverflow)?,
+        ))
     }
 
-    fn apply(&self, range: Range<T>) -> Range<T> {
-        range.start..range.end + self.radius + self.radius
+    #[inline]
+    fn apply(&self, span: Span<T>) -> Option<Span<T>> {
+        Some(Span {
+            x: NonZeroRange::new_unchecked(span.x.start..span.x.end + self.radius + self.radius),
+            y: span.y + self.radius,
+        })
     }
 }
 
@@ -294,21 +335,30 @@ where
 /// How x coordinates are dilated is determined by the [`DilateStrategy`] `S`
 /// ([`DilateInPlace`] by default, which keeps original coordinates).
 ///
-/// All arithmetic happens on `T` without checked operations: [`Self::new`] relies on
-/// `parent.bounds()` — spans of a parent never leave their [`ImageDimension`] bounds — and on
-/// `S::check`/`new` to reject any `bounds`/`offset` combination for which the largest
+/// All arithmetic happens on `T` without checked operations: the [`DilateStrategy`] maps
+/// each input span into the coverage bounds derived from the parent's [`ImageDimension`]
+/// bounds — how out-of-bounds spans are treated is the strategy's job ([`DilateInPlace`]
+/// clips them, [`DilateTranslated`] requires them in bounds) — and
+/// [`Self::with_strategy`] rejects any `bounds`/`offset` combination for which the largest
 /// intermediate value is not representable in `T`. This rules out every overflow and
 /// out-of-bounds access the iterator could perform.
 pub struct DilateSpanIterAcc<I, T, S = DilateInPlace<T>> {
     input: I,
-    /// Peeked next input span, pulled lazily from `input`.
+    /// Peeked next input span — already dilated by the strategy (see [`Self::pull_next`]),
+    /// so the window logic below can rely on its `y` — pulled lazily from `input`.
     next_input: Option<Span<T>>,
     offset: T,
     strategy: S,
     bounds: Rect<u32>,
-    /// Input spans whose Chebyshev distance to the current output row is `<= offset`, in `y` order.
-    active: VecDeque<Span<T>>,
-    /// Per-column coverage accumulator, indexed by absolute `x`. Entry `> 0` means the column is alive.
+    /// Exclusive end (absolute row) of the coverage: rows beyond can never gain coverage,
+    /// so iteration stops before reaching it.
+    cov_y_end: T,
+    /// Window entries as `(x, y)` in `y` order, where `x` holds the dilated coverage
+    /// indices (absolute) of the span — computed once by [`DilateStrategy::apply`] when the
+    /// span enters the window, never again.
+    active: VecDeque<(Range<T>, T)>,
+    /// Per-column coverage accumulator, indexed by absolute `x`. Entry `> 0` means the
+    /// column is alive.
     coverage: Vec<u16>,
     /// Start of the alive region within `coverage` for the current row: min over all active
     /// spans of their coverage start. Columns below it are guaranteed dead.
@@ -338,9 +388,13 @@ where
         + TryFrom<u64, Error: Into<IncompatibleSizeError>>,
     u32: UncheckedCast<T>,
 {
-    /// Creates an iterator dilating with the default [`DilateInPlace`] strategy.
+    /// Creates an iterator dilating with the default [`DilateInPlace`] strategy, which
+    /// clips input spans to the input bounds `iter` declares.
     pub fn new(iter: I, offset: T::NonZero) -> Result<Self, PipelineError> {
-        Self::with_strategy(iter, offset, DilateInPlace::new(offset.into()))
+        let bounds = iter.bounds();
+        let outer_x_end = u64::from(bounds.x) + u64::from(bounds.width.get());
+        let outer_x = try_coordinate::<T>(u64::from(bounds.x))?..try_coordinate::<T>(outer_x_end)?;
+        Self::with_strategy(iter, offset, DilateInPlace::new(offset.into(), outer_x))
     }
 }
 
@@ -373,38 +427,21 @@ where
             return Err(IntErrorKind::PosOverflow.into());
         }
 
-        // x mapping (coverage length, output bounds and per-span indices) is validated by
-        // the strategy. Relying on `parent.bounds()`: every span of the parent iterator
-        // stays within `orig_bounds`, so its coordinates never exceed `x_end`/`y_end`.
-        strategy.check(orig_bounds)?;
-        // The largest y value of the hot path is `y_end + 2 * offset` (the largest
-        // `enter_until`); rejecting anything not representable in `T` rules out every
-        // overflow below.
-        let y_end = u64::from(orig_bounds.y) + u64::from(orig_bounds.height.get());
-        ensure_representable::<T>(y_end + 2 * u64::from(off_u32))?;
+        // Coverage bounds: `orig_bounds` dilated by the strategy (x) and `offset` (y).
+        // Input spans are clipped to `orig_bounds`, so every coordinate the iterator
+        // produces — coverage index or emitted span — stays within `bounds`: rejecting
+        // bounds not representable in `T` rules out every overflow of the hot path.
+        let bounds = strategy.compute_bounds(orig_bounds)?;
+        let bounds_x_end = u64::from(bounds.x) + u64::from(bounds.width.get());
+        let bounds_y_end = u64::from(bounds.y) + u64::from(bounds.height.get());
+        try_coordinate::<T>(bounds_x_end)?;
+        try_coordinate::<T>(bounds_y_end)?;
 
-        let x_start = u64::from(orig_bounds.x);
-        let x_end = x_start + u64::from(orig_bounds.width.get());
-
-        let start_t: T =
-            <T>::try_from(x_start).map_err(|e| IncompatibleSizeError::from(e.into()))?;
-        let bounds_range =
-            start_t..<T>::try_from(x_end).map_err(|e| IncompatibleSizeError::from(e.into()))?;
-        let out_x = strategy.apply(bounds_range);
-        let (cov_start, cov_end) = (
-            UncheckedCast::<u64>::cast_unchecked(out_x.start),
-            UncheckedCast::<u64>::cast_unchecked(out_x.end),
-        );
-        let cov_len = usize::try_from(cov_end)?;
-        let x = u32::try_from(cov_start).map_err(|_| IntErrorKind::PosOverflow)?;
-        let width = u32::try_from(cov_end - cov_start).map_err(|_| IntErrorKind::PosOverflow)?;
-        let (y, height) = calculate_bound_dim(orig_bounds.y, orig_bounds.height, off_u32)?;
-        let bounds = Rect::new(
-            x,
-            y,
-            NonZeroU32::new(width).ok_or(IntErrorKind::PosOverflow)?,
-            height,
-        );
+        let cov_y_start = try_coordinate::<T>(u64::from(bounds.y))?;
+        let cov_y_end = try_coordinate::<T>(bounds_y_end)?;
+        // Coverage is indexed by absolute `x`, so it also covers the padding left of
+        // `bounds.x` (which `row_a` never scans).
+        let cov_len = usize::try_from(bounds_x_end)?;
 
         let mut this = Self {
             input: iter,
@@ -412,51 +449,54 @@ where
             offset: offset_val,
             strategy,
             bounds,
+            cov_y_end,
             active: VecDeque::new(),
             coverage: vec![0u16; cov_len],
             row_a: 0,
             row_b: 0,
             cursor: 0,
-            cur_y: T::zero(),
+            cur_y: cov_y_start,
         };
-        this.next_input = this.input.next();
+        this.next_input = this.pull_next();
         if let Some(first) = this.next_input {
-            this.cur_y = first.y.saturating_sub(&offset_val);
+            // First row which can produce output: never before the coverage starts.
+            this.cur_y = first.y.saturating_sub(&offset_val).max(cov_y_start);
         }
-        this.load_row();
-        this.cursor = this.row_a;
+        if this.cur_y < this.cov_y_end {
+            this.load_row();
+            this.cursor = this.row_a;
+        }
         Ok(this)
     }
 
-    /// Coverage indices `[a, b)` of the x-dilation of `span`.
-    ///
-    /// `start` can only saturate at 0 when the span touches the left dilation edge; `end`
-    /// always stays within `coverage`, because spans never leave their parent bounds (see
-    /// [`Self::with_strategy`]).
-    fn coverage_range(&self, span: &Span<T>) -> (usize, usize) {
-        let range = self.strategy.apply(span.x.start..span.x.end);
-        debug_assert!(
-            u64::from(UncheckedCast::<u32>::cast_unchecked(range.end))
-                <= self.coverage.len() as u64,
-            "span {span:?} escapes its ImageDimension bounds"
-        );
-        (
-            UncheckedCast::<u32>::cast_unchecked(range.start) as usize,
-            UncheckedCast::<u32>::cast_unchecked(range.end) as usize,
-        )
+    /// Pulls the next span from `input` and dilates it via [`DilateStrategy::apply`],
+    /// skipping spans the strategy rejects (e.g. entirely outside the input bounds).
+    fn pull_next(&mut self) -> Option<Span<T>> {
+        loop {
+            let span = self.input.next()?;
+            if let Some(dilated) = self.strategy.apply(span) {
+                debug_assert!(
+                    UncheckedCast::<u64>::cast_unchecked(dilated.x.end)
+                        <= self.coverage.len() as u64,
+                    "dilated {dilated:?} escapes the coverage bounds — was the strategy \
+                     constructed for the input bounds?"
+                );
+                return Some(dilated);
+            }
+        }
     }
 
-    fn add_range(&mut self, span: &Span<T>) {
-        let (a, b) = self.coverage_range(span);
-        // Counts provably stay within `2 * offset + 1 <= u16::MAX` (see `new`), so wrapping
-        // cannot occur — plain add/sub keeps the loop vectorizable.
+    fn add_range(&mut self, range: &Range<T>) {
+        let (a, b) = coverage_indices(range);
+        // Counts provably stay within `2 * offset + 1 <= u16::MAX` (see `with_strategy`),
+        // so wrapping cannot occur — plain add/sub keeps the loop vectorizable.
         for c in &mut self.coverage[a..b] {
             *c = c.wrapping_add(1);
         }
     }
 
-    fn remove_range(&mut self, span: &Span<T>) {
-        let (a, b) = self.coverage_range(span);
+    fn remove_range(&mut self, range: &Range<T>) {
+        let (a, b) = coverage_indices(range);
         for c in &mut self.coverage[a..b] {
             *c = c.wrapping_sub(1);
         }
@@ -466,39 +506,46 @@ where
     /// that start influencing it, keeping `coverage` in sync. Also re-derives the alive
     /// region `[row_a, row_b)`, so that `next` never scans dead padding columns.
     fn load_row(&mut self) {
-        let row = self.cur_y;
-        while let Some(span) = self
+        let row: u64 = UncheckedCast::cast_unchecked(self.cur_y);
+        let offset: u64 = UncheckedCast::cast_unchecked(self.offset);
+        while let Some((range, _)) = self
             .active
-            .pop_front_if(|front| front.y + self.offset < row)
+            .pop_front_if(|(_, y)| UncheckedCast::<u64>::cast_unchecked(*y) + offset < row)
         {
-            self.remove_range(&span);
+            self.remove_range(&range);
         }
 
-        let enter_until = row + self.offset;
+        let enter_until = row + offset;
         loop {
             let span = match self.next_input {
-                Some(span) if span.y <= enter_until => span,
+                Some(span) if UncheckedCast::<u64>::cast_unchecked(span.y) <= enter_until => span,
                 _ => break,
             };
-            self.add_range(&span);
-            self.active.push_back(span);
-            self.next_input = self.input.next();
+            self.next_input = self.pull_next();
+            // Spans which already fell out of the window (e.g. because `cur_y` was clamped
+            // or jumped past them) can never influence a row to come: skip them.
+            if UncheckedCast::<u64>::cast_unchecked(span.y) + offset < row {
+                continue;
+            }
+            let range = span.x.start..span.x.end;
+            self.add_range(&range);
+            self.active.push_back((range, span.y));
         }
 
         let (mut row_a, mut row_b) = (usize::MAX, 0);
-        for span in &self.active {
-            let (a, b) = self.coverage_range(span);
+        for (range, _) in &self.active {
+            let (a, b) = coverage_indices(range);
             row_a = row_a.min(a);
             row_b = row_b.max(b);
         }
-        self.row_a = if self.active.is_empty() { 0 } else { row_a };
+        self.row_a = if row_a == usize::MAX { 0 } else { row_a };
         self.row_b = row_b;
     }
 
     /// Advances to the next output row, reloading the sliding window. Returns `false` once
     /// the iteration is done.
     fn advance_row(&mut self) -> bool {
-        // `cur_y` never passes the last output row (see `new`), so this cannot overflow.
+        // `cur_y` stays below `cov_y_end` (which fits `T`), so this cannot overflow.
         let mut next_row = self.cur_y + T::one();
         if self.active.is_empty() {
             // Nothing is alive: jump directly to the first row the next input span
@@ -508,6 +555,10 @@ where
             };
             next_row = next_row.max(next_span.y.saturating_sub(&self.offset));
         }
+        if next_row >= self.cov_y_end {
+            // Rows beyond the coverage bounds can never gain coverage.
+            return false;
+        }
         self.cur_y = next_row;
         self.load_row();
         self.cursor = self.row_a;
@@ -515,13 +566,19 @@ where
     }
 }
 
-fn ensure_representable<T>(value: u64) -> Result<(), IncompatibleSizeError>
+/// Relative coverage indices `[a, b)` of an already clipped and dilated range.
+fn coverage_indices<T: UncheckedCast<u32>>(range: &Range<T>) -> (usize, usize) {
+    (
+        UncheckedCast::<u32>::cast_unchecked(range.start) as usize,
+        UncheckedCast::<u32>::cast_unchecked(range.end) as usize,
+    )
+}
+
+fn try_coordinate<T>(value: u64) -> Result<T, IncompatibleSizeError>
 where
     T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
 {
-    T::try_from(value)
-        .map(|_| ())
-        .map_err(|e| IncompatibleSizeError::from(e.into()))
+    T::try_from(value).map_err(Into::into)
 }
 
 impl<I, T, S> Iterator for DilateSpanIterAcc<I, T, S>
@@ -562,8 +619,8 @@ where
             self.cursor = end;
             return Some(Span {
                 x: NonZeroRange::new_debug_checked_zeroable(
-                    (start as u32).cast_unchecked(),
-                    (end as u32).cast_unchecked(),
+                    <u32 as UncheckedCast<T>>::cast_unchecked(start as u32),
+                    <u32 as UncheckedCast<T>>::cast_unchecked(end as u32),
                 ),
                 y: self.cur_y,
             });
@@ -575,7 +632,7 @@ where
     }
 }
 
-impl<I, T> ImageDimension for DilateSpanIterAcc<I, T> {
+impl<I, T, S> ImageDimension for DilateSpanIterAcc<I, T, S> {
     fn bounds(&self) -> Rect<u32> {
         self.bounds
     }
@@ -589,7 +646,10 @@ impl<I, T> ImageDimension for DilateSpanIterAcc<I, T> {
 mod tests {
     use std::num::{NonZero, NonZeroU8, NonZeroU32};
 
-    use crate::{DilateSpanIterAcc, ImageDimension, ImaskSet, Rect, SortedRanges, Span};
+    use crate::{
+        DilateSpanIterAcc, DilateTranslated, ImageDimension, ImaskSet, PipelineError, Rect,
+        SortedRanges, Span,
+    };
 
     const W: NonZero<u32> = NonZero::new(100).unwrap();
     const H: NonZero<u32> = NonZero::new(100).unwrap();
@@ -715,6 +775,116 @@ mod tests {
         )
         .unwrap();
         assert_eq!(Rect::new(1, 2, ELEVEN, ELEVEN), x.bounds());
+    }
+
+    #[test]
+    fn dilate_spans_entirely_outside_roi() {
+        let roi = Rect::new(4, 0, NonZero::new(3).unwrap(), NonZero::new(1).unwrap());
+        let result: Vec<_> = vec![
+            Span::new(0..1, 0u32),
+            Span::new(5..6, 0u32),
+            Span::new(9..10, 0u32),
+        ]
+        .into_iter()
+        .with_bounds(W, H)
+        .dilate_within(NonZero::new(1u32).unwrap(), roi)
+        .unwrap()
+        .collect();
+
+        assert_eq!(vec![Span::new(4..7, 0u32), Span::new(4..7, 1u32)], result);
+    }
+
+    #[test]
+    fn dilate_span_crossing_roi_edge_is_clipped_to_roi() {
+        let roi = Rect::new(4, 0, NonZero::new(3).unwrap(), NonZero::new(1).unwrap());
+        let result: Vec<_> = vec![Span::new(3..8, 0u32)]
+            .into_iter()
+            .with_bounds(W, H)
+            .dilate_within(NonZero::new(1u32).unwrap(), roi)
+            .unwrap()
+            .collect();
+
+        assert_eq!(vec![Span::new(3..8, 0u32), Span::new(3..8, 1u32)], result);
+    }
+
+    #[test]
+    fn dilate_spans_outside_roi_rows() {
+        let roi = Rect::new(0, 4, NonZero::new(10).unwrap(), NonZero::new(2).unwrap());
+        let result: Vec<_> = vec![
+            Span::new(5..6, 0u32),
+            Span::new(5..6, 4u32),
+            Span::new(5..6, 9u32),
+        ]
+        .into_iter()
+        .with_bounds(W, H)
+        .dilate_within(NonZero::new(1u32).unwrap(), roi)
+        .unwrap()
+        .collect();
+
+        assert_eq!(
+            vec![
+                Span::new(4..7, 3u32),
+                Span::new(4..7, 4u32),
+                Span::new(4..7, 5u32),
+            ],
+            result
+        );
+    }
+
+    #[test]
+    fn dilate_within_disjoint_roi_is_empty() {
+        let roi = Rect::new(200, 200, NonZero::new(3).unwrap(), NonZero::new(1).unwrap());
+        let result = vec![Span::new(0..1, 0u32)]
+            .into_iter()
+            .with_bounds(W, H)
+            .dilate_within(NonZero::new(1u32).unwrap(), roi);
+        assert!(matches!(result, Err(PipelineError::Empty)));
+    }
+
+    #[test]
+    fn dilate_translated_translates_x_and_y() {
+        let radius = NonZero::new(1u32).unwrap();
+        let iter = DilateSpanIterAcc::with_strategy(
+            vec![Span::new(5..6, 0u32), Span::new(5..6, 5u32)]
+                .into_iter()
+                .with_bounds(W, H),
+            radius,
+            DilateTranslated::new(1),
+        )
+        .unwrap();
+        assert_eq!(
+            Rect::new(0, 0, NonZero::new(102).unwrap(), NonZero::new(102).unwrap()),
+            iter.bounds()
+        );
+
+        let result: Vec<_> = iter.collect();
+        // DilateInPlace would emit 4..7 at rows 0,1 and 4..=6. Translated shifts x and y
+        // by +radius without saturating: every input row y becomes the full
+        // 2 * radius + 1 rows [y, y + 2 * radius].
+        assert_eq!(
+            vec![
+                Span::new(5..8, 0u32),
+                Span::new(5..8, 1u32),
+                Span::new(5..8, 2u32),
+                Span::new(5..8, 5u32),
+                Span::new(5..8, 6u32),
+                Span::new(5..8, 7u32),
+            ],
+            result
+        );
+    }
+
+    #[test]
+    fn dilate_translated_requires_y_space() {
+        // 250 + 5 + 2 * radius = 257 doesn't fit u8: compute_bounds/with_strategy must
+        // reject it, mirroring the x check.
+        let roi = Rect::new(0, 250, NonZero::new(10).unwrap(), NonZero::new(5).unwrap());
+        let result = DilateSpanIterAcc::with_strategy(
+            vec![Span::new(0u8..1, 250u8)].into_iter().with_roi(roi),
+            NonZero::new(1u8).unwrap(),
+            DilateTranslated::new(1),
+        );
+        assert!(matches!(result, Err(PipelineError::IncompatibleSize(_))));
     }
 
     // --- Equivalence tests between the union-based and accumulator-based dilation ---
