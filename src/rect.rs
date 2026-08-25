@@ -117,12 +117,27 @@ impl<T: SignedNonZeroable> Rect<T> {
         })
     }
 
+    pub fn range_y(&self) -> NonZeroRange<T>
+    where
+        NonZeroRange<T>: CreateRange<Item = T>,
+        T: Copy,
+    {
+        NonZeroRange::new_debug_checked(self.y, self.height)
+    }
     pub fn range_x(&self) -> NonZeroRange<T>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
         T: Copy,
     {
         NonZeroRange::new_debug_checked(self.x, self.width)
+    }
+
+    pub fn contains(&self, x: &T, y: &T) -> bool
+    where
+        NonZeroRange<T>: CreateRange<Item = T>,
+        T: Copy + Ord,
+    {
+        self.range_x().contains(x) && self.range_y().contains(y)
     }
 
     pub fn try_cast<TNew: SignedNonZeroable + TryFrom<T>>(self) -> Result<Rect<TNew>, TNew::Error>
@@ -170,8 +185,14 @@ impl Rect<u32> {
     pub fn expand(self, radius: u32) -> Self {
         let x = self.x.saturating_sub(radius);
         let y = self.y.saturating_sub(radius);
-        let x_end = self.x.saturating_add(self.width.get()).saturating_add(radius);
-        let y_end = self.y.saturating_add(self.height.get()).saturating_add(radius);
+        let x_end = self
+            .x
+            .saturating_add(self.width.get())
+            .saturating_add(radius);
+        let y_end = self
+            .y
+            .saturating_add(self.height.get())
+            .saturating_add(radius);
         Self::new(
             x,
             y,
@@ -191,8 +212,12 @@ mod tests {
     fn intersection_overlapping() {
         let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10);
         let b = Rect::new(5u32, 5, NON_ZERO_10, NON_ZERO_10);
-        let expected =
-            Rect::new(5u32, 5, NonZeroU32::new(5).unwrap(), NonZeroU32::new(5).unwrap());
+        let expected = Rect::new(
+            5u32,
+            5,
+            NonZeroU32::new(5).unwrap(),
+            NonZeroU32::new(5).unwrap(),
+        );
         assert_eq!(Some(expected), a.intersection(&b));
         assert_eq!(Some(expected), b.intersection(&a));
     }

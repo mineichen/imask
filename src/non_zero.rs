@@ -283,12 +283,6 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         );
         r
     }
-    pub fn contains(&self, other: &T) -> bool {
-        &self.0.start <= other && &self.0.end > other
-    }
-    pub fn overlaps(&self, other: &Self) -> bool {
-        self.start < other.end && other.start < self.end
-    }
     pub fn intersection(&self, other: &Self) -> Option<Self>
     where
         T: Copy,
@@ -300,6 +294,14 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         } else {
             None
         }
+    }
+}
+impl<T: Ord> NonZeroRange<T> {
+    pub fn contains(&self, other: &T) -> bool {
+        &self.0.start <= other && &self.0.end > other
+    }
+    pub fn overlaps(&self, other: &Self) -> bool {
+        self.start < other.end && other.start < self.end
     }
 }
 impl<T> NonZeroRange<T>
