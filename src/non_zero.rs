@@ -283,7 +283,9 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         );
         r
     }
-
+    pub fn contains(&self, other: &T) -> bool {
+        &self.0.start <= other && &self.0.end > other
+    }
     pub fn overlaps(&self, other: &Self) -> bool {
         self.start < other.end && other.start < self.end
     }
@@ -354,7 +356,17 @@ pub struct RangeZeroLenghtError<T>(T);
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU8;
+
     use super::*;
+
+    #[test]
+    fn contains_examples() {
+        assert!(!NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&1));
+        assert!(NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&2));
+        assert!(NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&3));
+        assert!(!NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&4));
+    }
 
     #[test]
     fn non_overlapping_adjacent() {
