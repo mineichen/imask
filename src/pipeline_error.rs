@@ -116,12 +116,11 @@ impl From<IncompatibleSizeErrorKind> for IncompatibleSizeError {
 impl From<TryFromIntError> for IncompatibleSizeError {
     fn from(value: TryFromIntError) -> Self {
         IncompatibleSizeErrorKind::TryFromInt(value).into()
-        //Self(value.to_string())
     }
 }
 
 impl From<Infallible> for IncompatibleSizeError {
-    fn from(_value: Infallible) -> Self {
-        unreachable!("Invallible cannot be constructed")
+    fn from(value: Infallible) -> Self {
+        match value {}
     }
 }

@@ -8,8 +8,9 @@ use std::{
 
 use crate::visualize_iter::IterVisualizer;
 use crate::{
-    CreateRange, ImageDimension, IncompatibleSizeError, NonZeroRange, PipelineError, Rect,
-    SignedNonZeroable, SortedRangesSpanIter, Span, UncheckedCast, WithBounds, WithRoi,
+    CreateRange, ImageDimension, IncompatibleSizeError, IntoPipelineOutput, MaybeResult,
+    NonZeroRange, PipelineError, Rect, SignedNonZeroable, SortedRangesSpanIter, Span,
+    UncheckedCast, WithBounds, WithRoi,
     span::{ClipSpanIter, FoldInlineSpanIter},
 };
 
@@ -120,17 +121,17 @@ pub trait ImaskSet: IntoIterator + Sized {
         self,
     ) -> Result<
         crate::span::UnionAll<
-            <<Self::Item as crate::MaybeResult>::Ok as std::iter::IntoIterator>::IntoIter,
+            <<Self::Item as MaybeResult>::Ok as std::iter::IntoIterator>::IntoIter,
         >,
-        PipelineError,
+        <<Self::Item as MaybeResult>::Err as IntoPipelineOutput>::Output,
     >
     where
-        Self::Item: crate::MaybeResult<
+        Self::Item: MaybeResult<
                 Ok: std::iter::IntoIterator<
                     Item: Ord + Copy + std::fmt::Debug,
                     IntoIter: ImageDimension,
                 >,
-                Err: Into<PipelineError>,
+                Err: IntoPipelineOutput,
             >,
     {
         crate::span::UnionAll::new(self)

@@ -3,7 +3,10 @@ use std::collections::BinaryHeap;
 use std::collections::binary_heap::PeekMut;
 use std::fmt::Debug;
 
-use crate::{CreateRange, ImageDimension, MaybeResult, NonZeroRange, PipelineError, Rect, Span};
+use crate::{
+    CreateRange, ImageDimension, IntoPipelineOutput, MaybeResult, NonZeroRange, PipelineError,
+    Rect, Span,
+};
 
 pub struct UnionAll<I: Iterator> {
     heap: BinaryHeap<PendingIter<I>>,
@@ -17,31 +20,46 @@ impl<I: Iterator<Item: Ord>> UnionAll<I> {
     /// Each item of `iters` is a [`MaybeResult`]: an infallible [`Iterator`]
     /// ([`ImageDimension`]), a [`Result`] of one, or any other infallible
     /// value that can be converted into an iterator (see [`MaybeResult`]).
-    /// The first error encountered while seeding the merge is propagated.
-    pub fn new<S>(iters: impl IntoIterator<Item = S>) -> Result<Self, PipelineError>
+    ///
+    /// The error type of the returned [`Result`] depends on the items
+    /// (see [`IntoOutput`]): it is the item error type itself if that can
+    /// represent a [`PipelineError`], and [`PipelineError`] for infallible
+    /// items.
+    ///
+    /// Inputs which are empty — empty inner iterators as well as items which
+    /// merely failed with [`PipelineError::Empty`] (see
+    /// [`IntoOutput::into_output`]) — are skipped; the first real error
+    /// encountered while seeding the merge is propagated. Only if *all*
+    /// inputs are empty, [`PipelineError::Empty`] is returned.
+    pub fn new<S>(
+        iters: impl IntoIterator<Item = S>,
+    ) -> Result<Self, <S::Err as IntoPipelineOutput>::Output>
     where
-        S: MaybeResult<Ok: IntoIterator<IntoIter = I>, Err: Into<PipelineError>>,
+        S: MaybeResult<Ok: IntoIterator<IntoIter = I>, Err: IntoPipelineOutput>,
         I: ImageDimension,
     {
         let mut iters = iters
             .into_iter()
-            .map(|item| {
-                item.into_result().map_err(|e| e.into()).and_then(|x| {
+            // Skip empty inputs (empty inner iterators and items which
+            // merely failed with `PipelineError::Empty`), keep real errors:
+            .filter_map(|item| match item.into_result() {
+                Err(e) => e.into_output_if_not_empty().map(Err),
+                Ok(x) => {
                     let mut iter = x.into_iter();
                     let bounds = iter.bounds();
-                    let first = iter.next().ok_or(PipelineError::Empty)?;
-                    Ok((
-                        bounds,
-                        PendingIter {
-                            pending: Some(first),
-                            iter,
-                        },
-                    ))
-                })
-            })
-            .filter(|x| !matches!(x, Err(PipelineError::Empty)));
+                    iter.next().map(|first| {
+                        Ok((
+                            bounds,
+                            PendingIter {
+                                pending: Some(first),
+                                iter,
+                            },
+                        ))
+                    })
+                }
+            });
         let mut heap = BinaryHeap::with_capacity(iters.size_hint().0);
-        let (mut roi, first) = iters.next().ok_or(PipelineError::Empty)??;
+        let (mut roi, first) = iters.next().ok_or(PipelineError::Empty.into())??;
 
         heap.push(first);
         for pending in iters {
@@ -296,9 +314,80 @@ mod tests {
     #[test]
     fn result_error_propagates() {
         let item_ok: SortedRanges<u32> = Span::new(0..10, 0).into();
-        let item_err = u8::try_from(256).unwrap_err();
+        let item_err = PipelineError::from(u8::try_from(256).unwrap_err());
         let result = UnionAll::new([Ok(item_ok.into_iter()), Err(item_err)].with_roi(BOUNDS));
         assert!(matches!(result, Err(PipelineError::IncompatibleSize(_))));
+    }
+
+    /// Simulates an error enum like `PipelineErrorLeptos` which implements
+    /// `From<PipelineError>`: the error type of the items is preserved in
+    /// the `Result` returned by `UnionAll::new`.
+    #[derive(Debug, PartialEq)]
+    enum SupersetError {
+        Pipeline(PipelineError),
+        SupersetOnly,
+    }
+
+    impl From<PipelineError> for SupersetError {
+        fn from(error: PipelineError) -> Self {
+            Self::Pipeline(error)
+        }
+    }
+
+    impl IntoPipelineOutput for SupersetError {
+        type Output = SupersetError;
+        fn into_output_if_not_empty(self) -> Option<Self::Output> {
+            match self {
+                // an empty input is skipped, not an error:
+                SupersetError::Pipeline(PipelineError::Empty) => None,
+                error => Some(error),
+            }
+        }
+    }
+
+    #[test]
+    fn superset_error_is_preserved() {
+        let item_ok: SortedRanges<u32> = Span::new(0..10, 0).into();
+        let iter: Result<_, SupersetError> = Ok(item_ok.into_iter());
+        let result = UnionAll::new([iter, Err(SupersetError::SupersetOnly)].with_roi(BOUNDS));
+        assert_eq!(result.err(), Some(SupersetError::SupersetOnly));
+    }
+
+    #[test]
+    fn superset_error_empty_is_skipped() {
+        let item_err = SupersetError::from(PipelineError::Empty);
+        let item_ok: SortedRanges<u32> = Span::new(0..10, 0).into();
+        let result = UnionAll::new([Err(item_err), Ok(item_ok.into_iter())].with_roi(BOUNDS));
+        assert_eq!(
+            result.unwrap().collect::<Vec<_>>(),
+            vec![Span::new(0..10u32, 0)]
+        );
+    }
+
+    #[test]
+    fn superset_error_all_empty_propagates_empty() {
+        let empty = Ok(std::iter::empty::<Span<u32>>().with_roi(BOUNDS));
+        let result = UnionAll::new(
+            [empty, Err(SupersetError::Pipeline(PipelineError::Empty))].with_roi(BOUNDS),
+        );
+        assert_eq!(
+            result.err(),
+            Some(SupersetError::Pipeline(PipelineError::Empty))
+        );
+    }
+
+    #[test]
+    fn pipeline_error_empty_is_skipped() {
+        let item_ok: SortedRanges<u32> = Span::new(0..10, 0).into();
+        let result = UnionAll::new([
+            Err(PipelineError::Empty),
+            Ok(item_ok.into_iter()),
+            Err(PipelineError::Empty),
+        ]);
+        assert_eq!(
+            result.unwrap().collect::<Vec<_>>(),
+            vec![Span::new(0..10u32, 0)]
+        );
     }
 
     #[test]
