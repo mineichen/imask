@@ -28,19 +28,7 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        let a_w = self.a.parent.width();
-        let b_w = self.b.parent.width();
-        debug_assert_eq!(
-            a_w,
-            self.a.parent.bounds().width,
-            "Union parent A width must equal its bounds().width"
-        );
-        debug_assert_eq!(
-            b_w,
-            self.b.parent.bounds().width,
-            "Union parent B width must equal its bounds().width"
-        );
-        a_w.max(b_w)
+        self.bounds().width
     }
 }
 
@@ -156,6 +144,18 @@ mod tests {
         let b = Rect::new(8u32, 6, NON_ZERO_10, NON_ZERO_10).into_spans();
         let rect = a.union(b).bounds();
         assert_eq!(Rect::new(8u32, 6u32, NON_ZERO_12, NON_ZERO_14), rect);
+    }
+
+    #[test]
+    fn width_matches_bounds_for_offset_inputs() {
+        let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10).into_spans();
+        let b = Rect::new(5u32, 0, NON_ZERO_10, NON_ZERO_10).into_spans();
+        let union = a.union(b);
+        assert_eq!(
+            union.width(),
+            union.bounds().width,
+            "width() must equal bounds().width"
+        );
     }
 
     #[test]

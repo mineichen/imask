@@ -47,7 +47,7 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.a.parent.width().min(self.b.parent.width())
+        self.bounds().width
     }
 }
 
@@ -191,7 +191,21 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::SortedRanges;
+
     use super::*;
+
+    #[test]
+    fn width_matches_bounds_for_offset_inputs() {
+        let a = SortedRanges::<u32>::from(Span::new(0..10, 0));
+        let b = SortedRanges::<u32>::from(Span::new(5..15, 0));
+        let intersect = Intersect::new(a.spans::<u32>(), b.spans::<u32>());
+        assert_eq!(
+            intersect.width(),
+            intersect.bounds().width,
+            "width() must equal bounds().width"
+        );
+    }
 
     #[test]
     fn no_overlap_different_lines() {
