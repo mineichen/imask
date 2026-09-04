@@ -632,6 +632,107 @@ impl<T> SortedRanges<T> {
         builder.build()
     }
 
+    /// Collects spans while tracking the minimal bounds, then shrinks [`SortedRanges::bounds`]
+    /// to those minimal bounds.
+    ///
+    /// The first pass builds with `input.bounds()` while tracking
+    /// `min_x`/`max_x_end`/`min_y`/`max_y` (the same job
+    /// [`BoundsInspector`](crate::BoundsInspector) does for flat ranges,
+    /// but directly on spans so no extra pass is needed).
+    ///
+    /// Afterwards:
+    /// - if the tracked min-bounds equal `input.bounds()`, the first result is returned as-is.
+    /// - if only `y + height` is too big (same `x`, `y` and `width`), only [`Rect`] is adapted.
+    /// - if `x`/`width` match but the `y`-offset is off, the absolute start
+    ///   (`excluded[0]`) is shifted by `offset * width` and [`Rect`] is adapted.
+    /// - otherwise (`x`-bounds don't match, hence the row stride changes),
+    ///   the first result is re-encoded via
+    ///   `first.into_spans().with_roi(min_bounds)` + [`SortedRanges::try_from_span_iter`].
+    pub fn try_from_span_iter_minbounds<TIter, TSpan>(iter: TIter) -> Result<Self, PipelineError>
+    where
+        TIter: IntoIterator<Item = Span<TSpan>, IntoIter: ImageDimension>,
+        TSpan: Copy + TryInto<u64>,
+        T: TryFrom<u64, Error: Display> + UncheckedCast<u64> + UncheckedCast<u32> + Copy,
+        IncompatibleSizeError: From<TSpan::Error>,
+        IncompatibleSizeError: From<T::Error>,
+    {
+        let mut iter = iter.into_iter();
+        let declared = iter.bounds();
+        debug_assert_eq!(
+            iter.width(),
+            declared.width,
+            "width() must equal bounds().width"
+        );
+        let size_hint = iter.size_hint().0;
+        let mut builder = SortedRangesSpanBuilderInternal::<T>::new(declared, size_hint);
+
+        let mut min_x = u64::MAX;
+        let mut max_x_end = u64::MIN;
+        let mut min_y = u64::MAX;
+        let mut max_y = u64::MIN;
+
+        for span in &mut iter {
+            let x_start: u64 = span
+                .x
+                .start
+                .try_into()
+                .map_err(IncompatibleSizeError::from)?;
+            let x_end: u64 = span.x.end.try_into().map_err(IncompatibleSizeError::from)?;
+            let y: u64 = span.y.try_into().map_err(IncompatibleSizeError::from)?;
+            min_x = min_x.min(x_start);
+            max_x_end = max_x_end.max(x_end);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
+            builder.add(span)?;
+        }
+        let mut first = builder.build()?;
+
+        let min_x_32 = u32::try_from(min_x).map_err(IncompatibleSizeError::from)?;
+        let max_x_end_32 = u32::try_from(max_x_end).map_err(IncompatibleSizeError::from)?;
+        let min_y_32 = u32::try_from(min_y).map_err(IncompatibleSizeError::from)?;
+        let max_y_32 = u32::try_from(max_y).map_err(IncompatibleSizeError::from)?;
+        let tight_width =
+            NonZeroU32::new(max_x_end_32 - min_x_32).expect("non-empty spans imply non-zero width");
+        let tight_height = NonZeroU32::new(max_y_32 - min_y_32 + 1)
+            .expect("non-empty spans imply non-zero height");
+        let tight = Rect::new(min_x_32, min_y_32, tight_width, tight_height);
+
+        if tight == declared {
+            return Ok(first);
+        }
+
+        if tight.x == declared.x && tight.width == declared.width {
+            if tight.y == declared.y {
+                // Only trailing empty rows: flat layout unchanged, shrink height.
+                first.bounds = tight;
+                return Ok(first);
+            }
+            // Same x/width, y-offset off: flat positions shift uniformly by
+            // delta = (tight.y - declared.y) * width. Only the absolute start
+            // (excluded[0]) stores an absolute position, the rest are deltas,
+            // so a single adjustment suffices
+            // (conceptually `buffer.for_each_mut(|v| *v += offset * width)`
+            // on absolute positions).
+            let declared_y_u64 = u64::from(declared.y);
+            let tight_y_u64 = u64::from(tight.y);
+            let width_u64 = declared.width.get() as u64;
+            assert!(tight_y_u64 >= declared_y_u64);
+            let delta = (tight_y_u64 - declared_y_u64) * width_u64;
+            let first_u64: u64 = first.excluded[0].cast_unchecked();
+            let adjusted = first_u64
+                .checked_sub(delta)
+                .ok_or(IntErrorKind::NegOverflow)?;
+            first.excluded[0] = T::try_from(adjusted).map_err(IncompatibleSizeError::from)?;
+            first.bounds = tight;
+            return Ok(first);
+        }
+
+        // x-bounds don't match (or y moved outside): row stride changed,
+        // full re-encode via spans is required.
+        let overridden_roi = first.spans::<u32>().with_roi(tight);
+        Self::try_from_span_iter(overridden_roi)
+    }
+
     #[cfg(feature = "async-io")]
     pub(crate) fn from_parts(included: Vec<T>, excluded: Vec<T>, bounds: Rect<u32>) -> Self {
         Self {
@@ -1273,6 +1374,102 @@ mod tests {
 
         let ranges: Vec<Range<u64>> = result.iter_roi().collect();
         assert_eq!(vec![0u64..131070], ranges);
+        Ok(())
+    }
+
+    #[test]
+    fn from_span_iter_minbounds_height_too_big() -> TestResult {
+        // Declared height (10) is much bigger than needed (2); x, y and width match.
+        let declared = Rect::new(
+            0u32,
+            0,
+            NonZero::new(10u32).unwrap(),
+            NonZero::new(10u32).unwrap(),
+        );
+        let spans = vec![Span::new(0u32..10, 0u32), Span::new(0u32..10, 1u32)];
+
+        let result =
+            SortedRanges::<u32>::try_from_span_iter_minbounds(spans.clone().with_roi(declared))?;
+
+        let expected_bounds = Rect::new(
+            0u32,
+            0,
+            NonZero::new(10u32).unwrap(),
+            NonZero::new(2u32).unwrap(),
+        );
+        assert_eq!(expected_bounds, ImageDimension::bounds(&result));
+        assert_eq!(spans, result.spans().collect::<Vec<_>>());
+
+        // Same flat layout as a direct collect with tight bounds.
+        let direct = SortedRanges::<u32>::try_from_span_iter(spans.with_roi(expected_bounds))?;
+        assert_eq!(
+            direct.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+            result.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn from_span_iter_minbounds_y_offset() -> TestResult {
+        // Declared y (0) is smaller than actual min y (2); x/width match so only
+        // the absolute start (offset * width) has to be shifted.
+        let declared = Rect::new(
+            0u32,
+            0,
+            NonZero::new(10u32).unwrap(),
+            NonZero::new(10u32).unwrap(),
+        );
+        let spans = vec![Span::new(0u32..10, 2u32), Span::new(0u32..10, 3u32)];
+
+        let result =
+            SortedRanges::<u32>::try_from_span_iter_minbounds(spans.clone().with_roi(declared))?;
+
+        let expected_bounds = Rect::new(
+            0u32,
+            2,
+            NonZero::new(10u32).unwrap(),
+            NonZero::new(2u32).unwrap(),
+        );
+        assert_eq!(expected_bounds, ImageDimension::bounds(&result));
+        assert_eq!(spans, result.spans().collect::<Vec<_>>());
+
+        let direct = SortedRanges::<u32>::try_from_span_iter(spans.with_roi(expected_bounds))?;
+        assert_eq!(
+            direct.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+            result.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn from_span_iter_minbounds_x_mismatch() -> TestResult {
+        // Declared x/width (0/10) don't match actual (2/3): row stride changes,
+        // so a full re-encode via into_spans().with_roi() is required.
+        let declared = Rect::new(
+            0u32,
+            0,
+            NonZero::new(10u32).unwrap(),
+            NonZero::new(10u32).unwrap(),
+        );
+        let spans = vec![Span::new(2u32..5, 1u32), Span::new(2u32..5, 2u32)];
+
+        let result =
+            SortedRanges::<u32>::try_from_span_iter_minbounds(spans.clone().with_roi(declared))?;
+
+        let expected_bounds = Rect::new(
+            2u32,
+            1,
+            NonZero::new(3u32).unwrap(),
+            NonZero::new(2u32).unwrap(),
+        );
+        assert_eq!(expected_bounds, ImageDimension::bounds(&result));
+        assert_eq!(spans, result.spans().collect::<Vec<_>>());
+
+        let direct = SortedRanges::<u32>::try_from_span_iter(spans.with_roi(expected_bounds))?;
+        assert_eq!(
+            direct.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+            result.iter_roi::<Range<u64>>().collect::<Vec<_>>(),
+        );
         Ok(())
     }
 }
