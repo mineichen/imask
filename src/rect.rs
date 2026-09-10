@@ -80,6 +80,14 @@ impl<T: SignedNonZeroable> Rect<T> {
         T::create_non_zero(self.x + self.width.into()).expect("Only fails, if addition overflows")
     }
 
+    #[expect(deprecated)]
+    pub fn union(&self, other: &Self) -> Self
+    where
+        T: Copy + Ord + Add<Output = T> + Sub<Output = T>,
+    {
+        self.bounds(other)
+    }
+    #[deprecated = "Use union instead"]
     pub fn bounds(&self, other: &Self) -> Self
     where
         T: Copy + Ord + Add<Output = T> + Sub<Output = T>,

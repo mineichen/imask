@@ -4,7 +4,7 @@ use std::collections::binary_heap::PeekMut;
 use std::fmt::Debug;
 
 use crate::{
-    CreateRange, ImageDimension, IntoPipelineOutput, MaybeResult, NonZeroRange, PipelineError,
+    CreateRange, ImageDimension, IntoPipelineOutput, MaybeResult, NonZeroRange, PipelineEmptyError,
     Rect, Span,
 };
 
@@ -59,13 +59,13 @@ impl<I: Iterator<Item: Ord>> UnionAll<I> {
                 }
             });
         let mut heap = BinaryHeap::with_capacity(iters.size_hint().0);
-        let (mut roi, first) = iters.next().ok_or(PipelineError::Empty.into())??;
+        let (mut roi, first) = iters.next().ok_or(PipelineEmptyError.into())??;
 
         heap.push(first);
         for pending in iters {
             let (roi_i, item) = pending?;
             heap.push(item);
-            roi = roi.bounds(&roi_i);
+            roi = roi.union(&roi_i);
         }
 
         Ok(Self {

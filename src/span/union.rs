@@ -24,7 +24,7 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
             self.b.parent.width(),
             "Union parent B width must equal its bounds().width"
         );
-        a_bounds.bounds(&b_bounds)
+        a_bounds.union(&b_bounds)
     }
 
     fn width(&self) -> std::num::NonZero<u32> {

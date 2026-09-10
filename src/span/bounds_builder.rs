@@ -17,12 +17,8 @@ pub struct SpanBoundsBuilder<T> {
     min_y: T,
     max_y: T,
 }
-
-impl<T: Copy + Ord + Bounded> SpanBoundsBuilder<T> {
-    /// Starts with `min = T::MAX`, `max = T::MIN` sentinels
-    /// (via [`Bounded::max_value`] / [`Bounded::min_value`]).
-    #[inline]
-    pub fn new() -> Self {
+impl<T: Bounded> Default for SpanBoundsBuilder<T> {
+    fn default() -> Self {
         Self {
             min_x: T::max_value(),
             max_x_end: T::min_value(),
@@ -30,7 +26,9 @@ impl<T: Copy + Ord + Bounded> SpanBoundsBuilder<T> {
             max_y: T::min_value(),
         }
     }
+}
 
+impl<T: Copy + Ord + Bounded> SpanBoundsBuilder<T> {
     /// Folds one span into the aggregated min/max state.
     ///
     /// Accepts spans over any `I: Into<T>`, so e.g. a
@@ -104,7 +102,7 @@ impl<T: Copy + Ord + Bounded> Extend<Span<T>> for SpanBoundsBuilder<T> {
 impl<T: Copy + Ord + Bounded> FromIterator<Span<T>> for SpanBoundsBuilder<T> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Span<T>>>(iter: I) -> Self {
-        let mut builder = Self::new();
+        let mut builder = Self::default();
         builder.extend(iter);
         builder
     }
@@ -119,14 +117,14 @@ mod tests {
     #[test]
     fn empty_builds_none() {
         assert_eq!(
-            SpanBoundsBuilder::<u32>::new().build(),
+            SpanBoundsBuilder::<u32>::default().build(),
             Err(PipelineEmptyError)
         );
     }
 
     #[test]
     fn single_span() {
-        let mut builder = SpanBoundsBuilder::<u32>::new();
+        let mut builder = SpanBoundsBuilder::<u32>::default();
         let span = Span::new(10u32..20, 2u32);
         builder.add(span);
         let expected: Rect<u32> = span.into();
@@ -135,7 +133,7 @@ mod tests {
 
     #[test]
     fn aggregates_min_max() {
-        let mut builder = SpanBoundsBuilder::<u32>::new();
+        let mut builder = SpanBoundsBuilder::<u32>::default();
         builder.add(Span::new(10u32..20, 5u32));
         builder.add(Span::new(2u32..8, 1u32));
         builder.add(Span::new(4u32..30, 9u32));
@@ -145,16 +143,16 @@ mod tests {
 
     #[test]
     fn merge_combines_state() {
-        let mut a = SpanBoundsBuilder::<u32>::new();
+        let mut a = SpanBoundsBuilder::<u32>::default();
         a.add(Span::new(10u32..20, 5u32));
-        let mut b = SpanBoundsBuilder::<u32>::new();
+        let mut b = SpanBoundsBuilder::<u32>::default();
         b.add(Span::new(2u32..8, 1u32));
         a.merge(b);
         let expected = Rect::new(2u32, 1, NonZero::new(18).unwrap(), NonZero::new(5).unwrap());
         assert_eq!(a.build(), Ok(expected));
 
-        let mut empty = SpanBoundsBuilder::<u32>::new();
-        empty.merge(SpanBoundsBuilder::<u32>::new());
+        let mut empty = SpanBoundsBuilder::<u32>::default();
+        empty.merge(SpanBoundsBuilder::<u32>::default());
         assert!(empty.build().is_err());
     }
 
@@ -165,14 +163,14 @@ mod tests {
         let expected = Rect::new(2u32, 1, NonZero::new(3).unwrap(), NonZero::new(2).unwrap());
         assert_eq!(builder.build(), Ok(expected));
 
-        let mut builder = SpanBoundsBuilder::<u32>::new();
+        let mut builder = SpanBoundsBuilder::<u32>::default();
         builder.extend(spans);
         assert_eq!(builder.build(), Ok(expected));
     }
 
     #[test]
     fn single_pixel() {
-        let mut builder = SpanBoundsBuilder::<u32>::new();
+        let mut builder = SpanBoundsBuilder::<u32>::default();
         builder.add(Span::new(5u32..6, 7u32));
         let expected = Rect::new(5u32, 7, NonZeroU32::MIN, NonZeroU32::MIN);
         assert_eq!(builder.build(), Ok(expected));
@@ -180,19 +178,19 @@ mod tests {
 
     #[test]
     fn works_for_u8_u16_u64_usize() {
-        let mut b8 = SpanBoundsBuilder::<u8>::new();
+        let mut b8 = SpanBoundsBuilder::<u8>::default();
         b8.add(Span::new(2u8..5, 1u8));
         assert!(b8.build().is_ok());
 
-        let mut b16 = SpanBoundsBuilder::<u16>::new();
+        let mut b16 = SpanBoundsBuilder::<u16>::default();
         b16.add(Span::new(2u16..5, 1u16));
         assert!(b16.build().is_ok());
 
-        let mut b64 = SpanBoundsBuilder::<u64>::new();
+        let mut b64 = SpanBoundsBuilder::<u64>::default();
         b64.add(Span::new(2u64..5, 1u64));
         assert!(b64.build().is_ok());
 
-        let mut bsize = SpanBoundsBuilder::<usize>::new();
+        let mut bsize = SpanBoundsBuilder::<usize>::default();
         bsize.add(Span::new(2usize..5, 1usize));
         assert!(bsize.build().is_ok());
     }
