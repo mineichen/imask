@@ -27,7 +27,7 @@ use std::{
 #[derive(Debug, PartialEq, Eq, Clone, Copy, thiserror::Error)]
 pub enum PipelineError {
     /// The iterator did not produce the element required to seed the combinator.
-    #[error("iterator produced no elements to seed the combinator")]
+    #[error("No elements to process")]
     Empty,
     /// The chosen output type cannot represent the (size of the) ranges produced
     /// by the iterator.
@@ -35,6 +35,16 @@ pub enum PipelineError {
     IncompatibleSize(#[from] IncompatibleSizeError),
 }
 
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("No elements to process")]
+#[non_exhaustive]
+pub struct PipelineEmptyError;
+
+impl From<PipelineEmptyError> for PipelineError {
+    fn from(_value: PipelineEmptyError) -> Self {
+        Self::Empty
+    }
+}
 impl From<std::convert::Infallible> for PipelineError {
     fn from(_value: std::convert::Infallible) -> Self {
         unreachable!("Infallible cannot be constructed")

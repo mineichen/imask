@@ -11,6 +11,7 @@ use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, 
 mod affine_transform;
 #[cfg(test)]
 mod ascii_bitmap;
+mod bounds_builder;
 mod clip;
 mod cluster;
 mod dilate;
@@ -26,6 +27,7 @@ mod union;
 mod union_all;
 
 pub use affine_transform::*;
+pub use bounds_builder::*;
 pub use clip::*;
 pub use cluster::*;
 pub use dilate::*;
@@ -42,19 +44,31 @@ pub use union_all::*;
 #[cfg(test)]
 pub(crate) use ascii_bitmap::{AsciiBitmap, AsciiBitmapIter};
 
-pub trait IntoSpanIter<T> {
-    type Item;
-    type IntoIter: Iterator<Item = NonZeroRange<Self::Item>> + ImageDimension;
-
-    fn into_span_iter(self) -> Self::IntoIter;
-}
-
 /// x_end is exclusive
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Span<T> {
     pub y: T,
     pub x: NonZeroRange<T>,
 }
+
+macro_rules! impl_into {
+    ($src:ty, $dst:ty) => {
+        impl From<Span<$src>> for Span<$dst> {
+            fn from(value: Span<$src>) -> Self {
+                Self {
+                    x: value.x.into(),
+                    y: value.y.into(),
+                }
+            }
+        }
+    };
+}
+impl_into!(u8, u16);
+impl_into!(u8, u32);
+impl_into!(u8, u64);
+impl_into!(u16, u32);
+impl_into!(u16, u64);
+impl_into!(u32, u64);
 
 impl<T: Display> Display for Span<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

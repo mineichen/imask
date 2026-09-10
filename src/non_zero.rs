@@ -11,6 +11,25 @@ use serde::Serialize;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonZeroRange<T>(RangeUnchecked<T>);
 
+macro_rules! impl_into {
+    ($src:ty, $dst:ty) => {
+        impl From<NonZeroRange<$src>> for NonZeroRange<$dst> {
+            fn from(value: NonZeroRange<$src>) -> Self {
+                Self(RangeUnchecked {
+                    start: value.0.start.into(),
+                    end: value.0.end.into(),
+                })
+            }
+        }
+    };
+}
+impl_into!(u8, u16);
+impl_into!(u8, u32);
+impl_into!(u8, u64);
+impl_into!(u16, u32);
+impl_into!(u16, u64);
+impl_into!(u32, u64);
+
 impl<T: Debug> Debug for NonZeroRange<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}..{:?}", self.start, self.end))
