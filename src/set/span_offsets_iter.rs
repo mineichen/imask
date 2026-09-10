@@ -1,4 +1,4 @@
-use std::{any::type_name, fmt::Debug, num::NonZero};
+use std::{any::type_name, num::NonZero};
 
 use crate::{ImageDimension, Span};
 
@@ -25,8 +25,8 @@ impl<TIter, TIncluded, TExcluded> SpanToOffsetsIter<TIter, TIncluded, TExcluded>
 impl<TIter, TIncluded, TExcluded> Iterator for SpanToOffsetsIter<TIter, TIncluded, TExcluded>
 where
     TIter: Iterator<Item = Span<u64>>,
-    TIncluded: TryFrom<u64, Error: Debug>,
-    TExcluded: TryFrom<u64, Error: Debug>,
+    TIncluded: TryFrom<u64>,
+    TExcluded: TryFrom<u64>,
 {
     type Item = (TExcluded, TIncluded);
 

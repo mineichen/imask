@@ -147,7 +147,7 @@ impl<T> SortedRanges<T> {
     where
         TIter: Iterator<Item = Span<u64>> + ImageDimension,
         TFun: FnOnce(SortedRangesSpanIter<SourceIterator<T>>) -> TIter,
-        T: TryFrom<u64, Error: Debug> + Clone + UncheckedCast<u64>,
+        T: TryFrom<u64> + Clone + UncheckedCast<u64>,
     {
         let original_len = self.included.len();
         let cell = Rc::new(RefCell::new((self, 0usize)));

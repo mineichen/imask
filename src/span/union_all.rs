@@ -181,7 +181,7 @@ mod tests {
     use std::num::NonZeroU32;
 
     use super::*;
-    use crate::{ImaskSet, SortedRanges};
+    use crate::{ImaskSet, PipelineError, SortedRanges};
 
     const BOUNDS: Rect<u32> = Rect::new(
         0,

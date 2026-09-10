@@ -656,13 +656,13 @@ impl<T> SortedRanges<T> {
     /// - if `x`/`width` match but the `y`-offset is off, the absolute start
     ///   (`excluded[0]`) is shifted by `offset * width` and [`Rect`] is adapted.
     /// - otherwise (`x`-bounds don't match, hence the row stride changes),
-    ///   the first result is re-encoded via
-    ///   `first.into_spans().with_roi(min_bounds)` + [`SortedRanges::try_from_span_iter`].
+    ///   the spans are re-encoded in-place via [`SortedRanges::map_span_inplace`],
+    ///   reusing the existing `included`/`excluded` buffers.
     pub fn try_from_span_iter_minbounds<TIter, TSpan>(iter: TIter) -> Result<Self, PipelineError>
     where
         TIter: IntoIterator<Item = Span<TSpan>, IntoIter: ImageDimension>,
         TSpan: Copy + TryInto<u64>,
-        T: TryFrom<u64, Error: Display> + UncheckedCast<u64> + UncheckedCast<u32> + Copy,
+        T: TryFrom<u64, Error: Display> + UncheckedCast<u64> + Copy,
         IncompatibleSizeError: From<TSpan::Error>,
         IncompatibleSizeError: From<T::Error>,
     {
@@ -738,9 +738,10 @@ impl<T> SortedRanges<T> {
         }
 
         // x-bounds don't match (or y moved outside): row stride changed,
-        // full re-encode via spans is required.
-        let overridden_roi = first.spans::<u32>().with_roi(tight);
-        Self::try_from_span_iter(overridden_roi)
+        // re-encode the spans in-place, reusing the existing buffers.
+        first
+            .map_span_inplace(|source| source.with_roi(tight))
+            .ok_or(PipelineError::Empty)
     }
 
     #[cfg(feature = "async-io")]
