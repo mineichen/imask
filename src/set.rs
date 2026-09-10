@@ -23,6 +23,7 @@ mod bounds_inspector;
 mod dilate;
 #[cfg(feature = "async-io")]
 mod future;
+mod inspect_spans;
 mod iter;
 mod iter_global;
 mod map_inplace;
@@ -35,6 +36,7 @@ mod span_offsets_iter;
 pub use bounds_inspector::*;
 #[cfg(feature = "range-set-blaze-0_5")]
 pub use dilate::*;
+pub use inspect_spans::*;
 pub use iter::*;
 pub use iter_global::*;
 pub use map_inplace::*;
@@ -65,6 +67,14 @@ pub trait ImaskSet: IntoIterator + Sized {
 
     fn inspect_bounds<R: CreateRange>(self) -> BoundsInspector<Self::IntoIter, R> {
         BoundsInspector::new(self.into_iter())
+    }
+    /// Behaves exactly like [`std::iter::Inspect`], but forwards [`ImageDimension`]
+    /// to the wrapped iterator.
+    fn inspect_spans<F>(self, f: F) -> InspectSpans<Self::IntoIter, F>
+    where
+        F: FnMut(&Self::Item),
+    {
+        InspectSpans::new(self.into_iter(), f)
     }
     /// In contrast to std::iter::inspect, `fold_inline` calls the lambda on all inputs spans,
     /// if `Self::finish` is called. The function deliberately uses Fn rather than FnMut,
