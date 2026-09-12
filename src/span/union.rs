@@ -161,13 +161,10 @@ mod tests {
     #[test]
     fn combine_multiline() {
         assert_eq!(
-            vec![
-                Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
-                Span::new(NonZeroRange::try_from(0..11).unwrap(), 1)
-            ],
+            vec![Span::new(0..10, 0), Span::new(0..11, 1)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(0..11).unwrap(), 1)),
+                std::iter::once(Span::new(0..10, 0)),
+                std::iter::once(Span::new(0..11, 1)),
             )
         );
     }

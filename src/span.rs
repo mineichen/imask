@@ -95,9 +95,16 @@ where
 }
 
 impl<T: Debug + Ord + Copy> Span<T> {
-    pub fn new(x: impl CreateRange<Item = T>, y: T) -> Self {
-        let x = NonZeroRange::new_debug_checked_zeroable(x.start(), x.end());
-        Self { x, y }
+    /// Panics: When `TryInto<NonZeroRange<T>>::try_into` fails. If a `NonZeroRange<T>` is provided, this method doesn't do any validation
+    // CreateRange-Bound allows better type inference because it's a Assoc-Type, while `TryInto` is a generic trait param
+    pub fn new<TSrc: CreateRange<Item = T> + TryInto<NonZeroRange<T>, Error: Debug>>(
+        x: TSrc,
+        y: T,
+    ) -> Self {
+        Self {
+            x: NonZeroRange::new(x),
+            y,
+        }
     }
 }
 

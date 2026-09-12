@@ -7,6 +7,8 @@ use num_traits::One;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
+use crate::CreateRange;
+
 /// NonZero is only checked during Debug and should not be relied upon for safety
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonZeroRange<T>(RangeUnchecked<T>);
@@ -282,14 +284,13 @@ impl<T> NonZeroRange<T> {
 }
 
 impl<T: Ord + Debug> NonZeroRange<T> {
-    pub fn new(into_range: impl Into<RangeUnchecked<T>>) -> Self {
-        let r = Self(into_range.into());
-        assert!(
-            r.start < r.end,
-            "NonZeroRange must contain a element: {:?}",
-            r
-        );
-        r
+    // CreateRange helps for type inference propagation, as it's a Assoc type rather than a Trait-Generic
+    pub fn new<TSrc: CreateRange<Item = T> + TryInto<NonZeroRange<T>, Error: Debug>>(
+        into_range: TSrc,
+    ) -> Self {
+        into_range
+            .try_into()
+            .expect("NonZeroRange must contain a element")
     }
     /// # Safety
     /// range.start has to be < range.end
@@ -383,10 +384,10 @@ mod tests {
 
     #[test]
     fn contains_examples() {
-        assert!(!NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&1));
-        assert!(NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&2));
-        assert!(NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&3));
-        assert!(!NonZeroRange::from_span(2u8, NonZeroU8::new(2).unwrap()).contains(&4));
+        assert!(!NonZeroRange::new(2u8..4).contains(&1));
+        assert!(NonZeroRange::new(2u8..4).contains(&2));
+        assert!(NonZeroRange::new(2u8..4).contains(&3));
+        assert!(!NonZeroRange::new(2u8..4).contains(&4));
     }
 
     #[test]

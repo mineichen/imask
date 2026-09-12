@@ -1,6 +1,6 @@
 use std::{fmt::Debug, marker::PhantomData, num::NonZeroU32, ops::Add};
 
-use crate::{ImageDimension, Rect, SignedNonZeroable, Span, UncheckedCast};
+use crate::{ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span, UncheckedCast};
 
 #[derive(Clone)]
 pub(crate) struct AsciiBitmap<const WIDTH: usize, const HEIGHT: usize> {
@@ -105,7 +105,7 @@ where
         }
         let end_x = self.data_x.cast_unchecked() + offset_x;
         Some(Span::new(
-            start_x..end_x,
+            NonZeroRange::new_unchecked(start_x..end_x),
             self.data_y.cast_unchecked() + offset_y,
         ))
     }
