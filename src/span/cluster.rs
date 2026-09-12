@@ -119,6 +119,7 @@ where
 /// A group of neighbouring spans. Implements [`ImageDimension`] (tight bounding
 /// box of its spans; `width() == bounds().width`) and drains its spans via
 /// [`Iterator`]. Iterating it consumes the group.
+#[derive(Clone)]
 pub struct SpanCluster<T> {
     spans: std::vec::IntoIter<Span<T>>,
     bounds: Rect<u32>,
