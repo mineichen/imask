@@ -937,6 +937,33 @@ impl<T> SortedRanges<T> {
             self.bounds.y.cast_unchecked(),
         )
     }
+
+    /// Returns `true`, if the point (`x`, `y`) is part of any included range.
+    ///
+    /// Heuristic: The bounds are checked first (O(1)) and the ranges are only
+    /// searched (O(n)), if the point lies within [`SortedRanges::bounds`].
+    pub fn contains<TP: Into<u32>>(&self, x: TP, y: TP) -> bool
+    where
+        T: Into<u64> + Copy,
+    {
+        let x_u32: u32 = x.into();
+        let y_u32: u32 = y.into();
+        if !self.bounds.contains(&x_u32, &y_u32) {
+            return false;
+        }
+        let flat = (y_u32 - self.bounds.y) as u64 * self.bounds.width.get() as u64
+            + (x_u32 - self.bounds.x) as u64;
+        let mut start: u64 = 0;
+        for (&gap, &len) in self.excluded.iter().zip(&self.included) {
+            start += gap.into();
+            let end = start + len.into();
+            if flat < end {
+                return flat >= start;
+            }
+            start = end;
+        }
+        false
+    }
 }
 
 impl<T> ImageDimension for SortedRanges<T> {
@@ -1076,6 +1103,51 @@ mod tests {
         let map = map.unwrap();
         let collected: Vec<_> = map.iter_roi::<std::ops::Range<u64>>().collect();
         assert_eq!(vec![0u64..1, 5u64..6], collected);
+    }
+
+    #[test]
+    fn contains_point() -> TestResult {
+        let bounds = Rect::new(
+            0,
+            0,
+            NonZero::new(100u32).unwrap(),
+            NonZero::new(100u32).unwrap(),
+        );
+        // row 0: x in 5..10, row 2: x in 5..10
+        let ranges =
+            SortedRanges::<u16>::try_from_ordered_iter([5u32..10, 205..210].with_roi(bounds))?;
+
+        // out_of_bounds: x/y beyond the rect
+        assert!(!ranges.contains(100u16, 0u16));
+        assert!(!ranges.contains(0u16, 100u16));
+        // (T::MAX, T::MAX): out of bounds without overflowing the bounds check
+        assert!(!ranges.contains(u16::MAX, u16::MAX));
+        // InboundNotContainedX: in bounds, but x lies in a gap of an included row
+        assert!(!ranges.contains(15u16, 0u16));
+        // InboundNotContainedY: in bounds, but the row contains no ranges at all
+        assert!(!ranges.contains(7u16, 1u16));
+        // Match: TP-generic call and matches on both rows
+        assert!(ranges.contains(7u8, 0u8));
+        assert!(ranges.contains(5u16, 2u16));
+        assert!(ranges.contains(7u16, 2u16));
+        // Match boundaries: start inclusive, end exclusive
+        assert!(ranges.contains(5u16, 0u16));
+        assert!(!ranges.contains(10u16, 0u16));
+        Ok(())
+    }
+
+    #[test]
+    fn contains_single_span_wider_than_u8() {
+        // Regression: SortedRanges::from(Span::new(0u16..257, 0)).contains(0, 0)
+        // must be true.
+        let ranges = SortedRanges::from(Span::new(0u16..257, 0));
+        assert!(ranges.contains(0u8, 0));
+        // Last pixel of the span is still included (end exclusive).
+        assert!(ranges.contains(256u16, 0));
+        // End is exclusive / out of bounds.
+        assert!(!ranges.contains(257u16, 0));
+        // Height is 1, so any other row is out of bounds.
+        assert!(!ranges.contains(0u16, 1));
     }
 
     #[test]
