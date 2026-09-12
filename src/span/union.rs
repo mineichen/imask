@@ -171,32 +171,20 @@ mod tests {
     #[test]
     fn combine_contained_sameline() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..22).unwrap(), 0)],
+            vec![Span::new(0..22, 0)],
             test_both_ways(
-                [
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(12..22).unwrap(), 0)
-                ],
-                [
-                    Span::new(NonZeroRange::try_from(8..14).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(18..20).unwrap(), 0)
-                ],
+                [Span::new(0..10, 0), Span::new(12..22, 0)],
+                [Span::new(8..14, 0), Span::new(18..20, 0)],
             )
         );
     }
     #[test]
     fn combine_non_overlapping_sameline() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..22).unwrap(), 0)],
+            vec![Span::new(0..22, 0)],
             test_both_ways(
-                [
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(12..20).unwrap(), 0)
-                ],
-                [
-                    Span::new(NonZeroRange::try_from(8..14).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(18..22).unwrap(), 0)
-                ],
+                [Span::new(0..10, 0), Span::new(12..20, 0)],
+                [Span::new(8..14, 0), Span::new(18..22, 0)],
             )
         );
     }
@@ -204,40 +192,40 @@ mod tests {
     #[test]
     fn combine_contained_or_wrapping() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..12).unwrap(), 0)],
+            vec![Span::new(0..12, 0)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(2..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(0..12).unwrap(), 0)),
+                std::iter::once(Span::new(2..10, 0)),
+                std::iter::once(Span::new(0..12, 0)),
             )
         );
     }
     #[test]
     fn combine_overlapping_both() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..12).unwrap(), 0)],
+            vec![Span::new(0..12, 0)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(2..12).unwrap(), 0)),
+                std::iter::once(Span::new(0..10, 0)),
+                std::iter::once(Span::new(2..12, 0)),
             )
         );
     }
     #[test]
     fn combine_overlapping() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..12).unwrap(), 0)],
+            vec![Span::new(0..12, 0)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(0..12).unwrap(), 0)),
+                std::iter::once(Span::new(0..10, 0)),
+                std::iter::once(Span::new(0..12, 0)),
             )
         );
     }
     #[test]
     fn combine_same() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
+            vec![Span::new(0..10, 0)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
+                std::iter::once(Span::new(0..10, 0)),
+                std::iter::once(Span::new(0..10, 0)),
             )
         );
     }
@@ -245,10 +233,10 @@ mod tests {
     #[test]
     fn combine_touching() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..20).unwrap(), 0)],
+            vec![Span::new(0..20, 0)],
             test_both_ways(
-                std::iter::once(Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)),
-                std::iter::once(Span::new(NonZeroRange::try_from(10..20).unwrap(), 0)),
+                std::iter::once(Span::new(0..10, 0)),
+                std::iter::once(Span::new(10..20, 0)),
             )
         );
     }

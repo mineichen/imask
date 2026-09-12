@@ -300,7 +300,7 @@ mod tests {
         let a = SortedRanges::from(Span::new(0..10, 0));
         let b = SortedRanges::from(Span::new(5..15, 0));
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..15).unwrap(), 0u16)],
+            vec![Span::new(0..15, 0u16)],
             [
                 Result::<_, std::convert::Infallible>::Ok(a),
                 Result::<_, std::convert::Infallible>::Ok(b)

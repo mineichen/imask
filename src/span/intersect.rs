@@ -211,10 +211,7 @@ mod tests {
     fn no_overlap_different_lines() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 1)],
-            )
+            test_intersect([Span::new(0..10, 0)], [Span::new(0..10, 1)],)
         );
     }
 
@@ -222,54 +219,39 @@ mod tests {
     fn no_overlap_same_line() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..5).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(10..15).unwrap(), 0)],
-            )
+            test_intersect([Span::new(0..5, 0)], [Span::new(10..15, 0)],)
         );
     }
 
     #[test]
     fn identical_spans() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)],
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-            )
+            vec![Span::new(0..10, 0u16)],
+            test_intersect([Span::new(0..10, 0)], [Span::new(0..10, 0)],)
         );
     }
 
     #[test]
     fn a_contained_in_b() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(5..10).unwrap(), 0u16)],
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(5..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(3..12).unwrap(), 0)],
-            )
+            vec![Span::new(5..10, 0u16)],
+            test_intersect([Span::new(5..10, 0)], [Span::new(3..12, 0)],)
         );
     }
 
     #[test]
     fn b_contained_in_a() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(3..12).unwrap(), 0u16)],
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..20).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(3..12).unwrap(), 0)],
-            )
+            vec![Span::new(3..12, 0u16)],
+            test_intersect([Span::new(0..20, 0)], [Span::new(3..12, 0)],)
         );
     }
 
     #[test]
     fn overlapping_both() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(2..10).unwrap(), 0u16)],
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(2..12).unwrap(), 0)],
-            )
+            vec![Span::new(2..10, 0u16)],
+            test_intersect([Span::new(0..10, 0)], [Span::new(2..12, 0)],)
         );
     }
 
@@ -277,10 +259,7 @@ mod tests {
     fn touching_at_boundary_no_overlap() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(10..20).unwrap(), 0)],
-            )
+            test_intersect([Span::new(0..10, 0)], [Span::new(10..20, 0)],)
         );
     }
 
@@ -288,10 +267,7 @@ mod tests {
     fn empty_a() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_intersect(
-                std::iter::empty(),
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-            )
+            test_intersect(std::iter::empty(), [Span::new(0..10, 0)],)
         );
     }
 
@@ -299,29 +275,17 @@ mod tests {
     fn empty_b() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_intersect(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                std::iter::empty(),
-            )
+            test_intersect([Span::new(0..10, 0)], std::iter::empty(),)
         );
     }
 
     #[test]
     fn multiple_overlaps_same_line() {
         assert_eq!(
-            vec![
-                Span::new(NonZeroRange::try_from(3..5).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(10..15).unwrap(), 0u16),
-            ],
+            vec![Span::new(3..5, 0u16), Span::new(10..15, 0u16),],
             test_intersect(
-                [
-                    Span::new(NonZeroRange::try_from(0..5).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(8..15).unwrap(), 0),
-                ],
-                [
-                    Span::new(NonZeroRange::try_from(3..6).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(10..20).unwrap(), 0),
-                ],
+                [Span::new(0..5, 0), Span::new(8..15, 0),],
+                [Span::new(3..6, 0), Span::new(10..20, 0),],
             )
         );
     }
@@ -329,16 +293,10 @@ mod tests {
     #[test]
     fn span_extends_across_other_spans() {
         assert_eq!(
-            vec![
-                Span::new(NonZeroRange::try_from(3..5).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(8..12).unwrap(), 0u16),
-            ],
+            vec![Span::new(3..5, 0u16), Span::new(8..12, 0u16),],
             test_intersect(
-                [
-                    Span::new(NonZeroRange::try_from(0..5).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(8..15).unwrap(), 0),
-                ],
-                [Span::new(NonZeroRange::try_from(3..12).unwrap(), 0)],
+                [Span::new(0..5, 0), Span::new(8..15, 0),],
+                [Span::new(3..12, 0)],
             )
         );
     }
@@ -347,35 +305,25 @@ mod tests {
     fn multiple_lines() {
         assert_eq!(
             vec![
-                Span::new(NonZeroRange::try_from(5..10).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(3..10).unwrap(), 1u16),
-                Span::new(NonZeroRange::try_from(3..7).unwrap(), 2u16),
+                Span::new(5..10, 0u16),
+                Span::new(3..10, 1u16),
+                Span::new(3..7, 2u16),
             ],
             test_intersect(
                 [
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 1),
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 2),
+                    Span::new(0..10, 0),
+                    Span::new(0..10, 1),
+                    Span::new(0..10, 2),
                 ],
-                [
-                    Span::new(NonZeroRange::try_from(5..15).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(3..12).unwrap(), 1),
-                    Span::new(NonZeroRange::try_from(3..7).unwrap(), 2),
-                ],
+                [Span::new(5..15, 0), Span::new(3..12, 1), Span::new(3..7, 2),],
             )
         );
     }
 
     #[test]
     fn is_commutative() {
-        let a = vec![
-            Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16),
-            Span::new(NonZeroRange::try_from(5..15).unwrap(), 1u16),
-        ];
-        let b = vec![
-            Span::new(NonZeroRange::try_from(3..12).unwrap(), 0u16),
-            Span::new(NonZeroRange::try_from(0..8).unwrap(), 1u16),
-        ];
+        let a = vec![Span::new(0..10, 0u16), Span::new(5..15, 1u16)];
+        let b = vec![Span::new(3..12, 0u16), Span::new(0..8, 1u16)];
 
         let ab = Intersect::new(a.clone().into_iter(), b.clone().into_iter()).collect::<Vec<_>>();
         let ba = Intersect::new(b.into_iter(), a.into_iter()).collect::<Vec<_>>();
@@ -389,12 +337,8 @@ mod tests {
     )]
     fn unsorted_input_panics() {
         let _ = Intersect::new(
-            [
-                Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(2..5).unwrap(), 0u16),
-            ]
-            .into_iter(),
-            [Span::new(NonZeroRange::try_from(0..10).unwrap(), 1u16)].into_iter(),
+            [Span::new(0..10, 0u16), Span::new(2..5, 0u16)].into_iter(),
+            [Span::new(0..10, 1u16)].into_iter(),
         )
         .collect::<Vec<_>>();
     }
@@ -406,12 +350,8 @@ mod tests {
     )]
     fn overlapping_input_panics() {
         let _ = Intersect::new(
-            [
-                Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(3..10).unwrap(), 0u16),
-            ]
-            .into_iter(),
-            [Span::new(NonZeroRange::try_from(0..10).unwrap(), 1u16)].into_iter(),
+            [Span::new(0..5, 0u16), Span::new(3..10, 0u16)].into_iter(),
+            [Span::new(0..10, 1u16)].into_iter(),
         )
         .collect::<Vec<_>>();
     }
@@ -423,12 +363,8 @@ mod tests {
     )]
     fn touching_input_panics() {
         let _ = Intersect::new(
-            [
-                Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(5..10).unwrap(), 0u16),
-            ]
-            .into_iter(),
-            [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)].into_iter(),
+            [Span::new(0..5, 0u16), Span::new(5..10, 0u16)].into_iter(),
+            [Span::new(0..10, 0u16)].into_iter(),
         )
         .collect::<Vec<_>>();
     }

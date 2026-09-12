@@ -124,8 +124,8 @@ impl<T> SortedRanges<T> {
     /// let height = NonZero::new(200u32).unwrap();
     /// // Two rows, each full width
     /// let spans = [
-    ///     Span::new(NonZeroRange::try_from(0..100)?, 0u64),
-    ///     Span::new(NonZeroRange::try_from(50..100)?, 1u64),
+    ///     Span::new(0..100, 0u64),
+    ///     Span::new(50..100, 1u64),
     /// ].with_bounds(width, height);
     /// let ranges = SortedRanges::<u32>::try_from_span_iter(spans)?;
     ///
@@ -137,8 +137,8 @@ impl<T> SortedRanges<T> {
     /// assert_eq!(1, result.len());
     /// let out_spans: Vec<_> = result.spans::<u64>().collect();
     /// assert_eq!(out_spans, vec![
-    ///     Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-    ///     Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
+    ///     Span::new(0..100, 0u64),
+    ///     Span::new(0..100, 1u64),
     /// ]);
     /// # Ok(())
     /// # }
@@ -277,18 +277,14 @@ where
 mod tests {
     use std::{num::NonZero, ops::Range};
 
-    use crate::{ImageDimension, ImaskSet, NonZeroRange, Rect, SortedRanges, Span};
+    use crate::{ImageDimension, ImaskSet, Rect, SortedRanges, Span};
 
     #[test]
     fn full_width_multiline_mask_union() {
         let width = NonZero::new(100u32).unwrap();
         let height = NonZero::new(200u32).unwrap();
         // Two rows, each full width
-        let spans = [
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
-        ]
-        .with_bounds(width, height);
+        let spans = [Span::new(0..100, 0u64), Span::new(0..100, 1u64)].with_bounds(width, height);
         let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
 
         let result = ranges
@@ -303,9 +299,9 @@ mod tests {
         assert_eq!(
             out_spans,
             vec![
-                Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-                Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
-                Span::new(NonZeroRange::try_from(0..50).unwrap(), 2u64),
+                Span::new(0..100, 0u64),
+                Span::new(0..100, 1u64),
+                Span::new(0..50, 2u64),
             ]
         );
     }
@@ -320,10 +316,10 @@ mod tests {
         );
         // Two rows, each full width, globally offset by (1, 2)
         let global_spans: Vec<Span<u64>> = vec![
-            Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 2u64),
-            Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 3u64),
-            Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 4u64),
-            Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 5u64),
+            Span::new(1u64..101, 2u64),
+            Span::new(1u64..101, 3u64),
+            Span::new(1u64..101, 4u64),
+            Span::new(1u64..101, 5u64),
         ];
 
         let ranges =
@@ -351,9 +347,9 @@ mod tests {
         assert_eq!(
             out_spans,
             vec![
-                Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 2u64),
-                Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 4u64),
-                Span::new(NonZeroRange::try_from(1u64..101).unwrap(), 5u64),
+                Span::new(1u64..101, 2u64),
+                Span::new(1u64..101, 4u64),
+                Span::new(1u64..101, 5u64),
             ]
         );
     }
@@ -363,11 +359,7 @@ mod tests {
         let width = NonZero::new(100u32).unwrap();
         let height = NonZero::new(200u32).unwrap();
         // Two rows, each full width
-        let spans = [
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
-        ]
-        .with_bounds(width, height);
+        let spans = [Span::new(0..100, 0u64), Span::new(0..100, 1u64)].with_bounds(width, height);
         let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
 
         // Remove half of the second row
@@ -382,10 +374,7 @@ mod tests {
         let out_spans: Vec<_> = result.spans::<u64>().collect();
         assert_eq!(
             out_spans,
-            vec![
-                Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-                Span::new(NonZeroRange::try_from(50..100).unwrap(), 1u64),
-            ]
+            vec![Span::new(0..100, 0u64), Span::new(50..100, 1u64),]
         );
     }
 
@@ -393,11 +382,7 @@ mod tests {
     fn map_span_inplace_identity_for_full_width_rows() {
         let width = NonZero::new(100u32).unwrap();
         let height = NonZero::new(200u32).unwrap();
-        let spans = [
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
-        ]
-        .with_bounds(width, height);
+        let spans = [Span::new(0..100, 0u64), Span::new(0..100, 1u64)].with_bounds(width, height);
         let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
         let original = ranges.spans::<u64>().collect::<Vec<_>>();
 
@@ -486,9 +471,9 @@ mod tests {
         let height = NonZero::new(3u32).unwrap();
         // Row 0 full, row 1 partial (touching row 0's boundary), row 2 full
         let spans = [
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 1u64),
-            Span::new(NonZeroRange::try_from(0..100).unwrap(), 2u64),
+            Span::new(0..100, 0u64),
+            Span::new(0..100, 1u64),
+            Span::new(0..100, 2u64),
         ]
         .with_bounds(width, height);
         let ranges = SortedRanges::<u32>::try_from_span_iter(spans).unwrap();
@@ -506,10 +491,10 @@ mod tests {
         assert_eq!(
             out_spans,
             vec![
-                Span::new(NonZeroRange::try_from(0..100).unwrap(), 0u64),
-                Span::new(NonZeroRange::try_from(0..25).unwrap(), 1u64),
-                Span::new(NonZeroRange::try_from(75..100).unwrap(), 1u64),
-                Span::new(NonZeroRange::try_from(0..100).unwrap(), 2u64),
+                Span::new(0..100, 0u64),
+                Span::new(0..25, 1u64),
+                Span::new(75..100, 1u64),
+                Span::new(0..100, 2u64),
             ]
         );
     }

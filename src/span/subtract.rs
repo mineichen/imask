@@ -139,22 +139,16 @@ mod tests {
     #[test]
     fn no_overlap_different_lines() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 1)],
-            )
+            vec![Span::new(0..10, 0u16)],
+            test_subtract([Span::new(0..10, 0)], [Span::new(0..10, 1)],)
         );
     }
 
     #[test]
     fn no_overlap_same_line() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..5).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(10..15).unwrap(), 0)],
-            )
+            vec![Span::new(0..5, 0u16)],
+            test_subtract([Span::new(0..5, 0)], [Span::new(10..15, 0)],)
         );
     }
 
@@ -162,46 +156,31 @@ mod tests {
     fn full_coverage() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(5..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..15).unwrap(), 0)],
-            )
+            test_subtract([Span::new(5..10, 0)], [Span::new(0..15, 0)],)
         );
     }
 
     #[test]
     fn subtract_left() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(8..15).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(5..15).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..8).unwrap(), 0)],
-            )
+            vec![Span::new(8..15, 0u16)],
+            test_subtract([Span::new(5..15, 0)], [Span::new(0..8, 0)],)
         );
     }
 
     #[test]
     fn subtract_right() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(5..15).unwrap(), 0)],
-            )
+            vec![Span::new(0..5, 0u16)],
+            test_subtract([Span::new(0..10, 0)], [Span::new(5..15, 0)],)
         );
     }
 
     #[test]
     fn subtract_middle() {
         assert_eq!(
-            vec![
-                Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(15..20).unwrap(), 0u16),
-            ],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..20).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(5..15).unwrap(), 0)],
-            )
+            vec![Span::new(0..5, 0u16), Span::new(15..20, 0u16),],
+            test_subtract([Span::new(0..20, 0)], [Span::new(5..15, 0)],)
         );
     }
 
@@ -209,16 +188,13 @@ mod tests {
     fn multiple_subtractions() {
         assert_eq!(
             vec![
-                Span::new(NonZeroRange::try_from(0..3).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(6..10).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(14..20).unwrap(), 0u16),
+                Span::new(0..3, 0u16),
+                Span::new(6..10, 0u16),
+                Span::new(14..20, 0u16),
             ],
             test_subtract(
-                [Span::new(NonZeroRange::try_from(0..20).unwrap(), 0)],
-                [
-                    Span::new(NonZeroRange::try_from(3..6).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(10..14).unwrap(), 0),
-                ],
+                [Span::new(0..20, 0)],
+                [Span::new(3..6, 0), Span::new(10..14, 0),],
             )
         );
     }
@@ -226,16 +202,10 @@ mod tests {
     #[test]
     fn b_extends_across_a_spans() {
         assert_eq!(
-            vec![
-                Span::new(NonZeroRange::try_from(0..3).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(12..15).unwrap(), 0u16),
-            ],
+            vec![Span::new(0..3, 0u16), Span::new(12..15, 0u16),],
             test_subtract(
-                [
-                    Span::new(NonZeroRange::try_from(0..5).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(8..15).unwrap(), 0),
-                ],
-                [Span::new(NonZeroRange::try_from(3..12).unwrap(), 0)],
+                [Span::new(0..5, 0), Span::new(8..15, 0),],
+                [Span::new(3..12, 0)],
             )
         );
     }
@@ -244,21 +214,15 @@ mod tests {
     fn identical_spans() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-            )
+            test_subtract([Span::new(0..10, 0)], [Span::new(0..10, 0)],)
         );
     }
 
     #[test]
     fn empty_mask() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                std::iter::empty(),
-            )
+            vec![Span::new(0..10, 0u16)],
+            test_subtract([Span::new(0..10, 0)], std::iter::empty(),)
         );
     }
 
@@ -266,22 +230,18 @@ mod tests {
     fn multiple_lines_mixed() {
         assert_eq!(
             vec![
-                Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16),
-                Span::new(NonZeroRange::try_from(3..10).unwrap(), 1u16),
-                Span::new(NonZeroRange::try_from(0..3).unwrap(), 2u16),
-                Span::new(NonZeroRange::try_from(7..10).unwrap(), 2u16),
+                Span::new(0..5, 0u16),
+                Span::new(3..10, 1u16),
+                Span::new(0..3, 2u16),
+                Span::new(7..10, 2u16),
             ],
             test_subtract(
                 [
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 1),
-                    Span::new(NonZeroRange::try_from(0..10).unwrap(), 2),
+                    Span::new(0..10, 0),
+                    Span::new(0..10, 1),
+                    Span::new(0..10, 2),
                 ],
-                [
-                    Span::new(NonZeroRange::try_from(5..15).unwrap(), 0),
-                    Span::new(NonZeroRange::try_from(0..3).unwrap(), 1),
-                    Span::new(NonZeroRange::try_from(3..7).unwrap(), 2),
-                ],
+                [Span::new(5..15, 0), Span::new(0..3, 1), Span::new(3..7, 2),],
             )
         );
     }
@@ -289,33 +249,24 @@ mod tests {
     #[test]
     fn b_before_all_a() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(5..10).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(5..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(0..3).unwrap(), 0)],
-            )
+            vec![Span::new(5..10, 0u16)],
+            test_subtract([Span::new(5..10, 0)], [Span::new(0..3, 0)],)
         );
     }
 
     #[test]
     fn b_after_all_a() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..5).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..5).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(10..15).unwrap(), 0)],
-            )
+            vec![Span::new(0..5, 0u16)],
+            test_subtract([Span::new(0..5, 0)], [Span::new(10..15, 0)],)
         );
     }
 
     #[test]
     fn touching_at_boundary() {
         assert_eq!(
-            vec![Span::new(NonZeroRange::try_from(0..10).unwrap(), 0u16)],
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(0..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(10..20).unwrap(), 0)],
-            )
+            vec![Span::new(0..10, 0u16)],
+            test_subtract([Span::new(0..10, 0)], [Span::new(10..20, 0)],)
         );
     }
 
@@ -323,10 +274,7 @@ mod tests {
     fn a_contained_in_b() {
         assert_eq!(
             Vec::<Span<u16>>::new(),
-            test_subtract(
-                [Span::new(NonZeroRange::try_from(5..10).unwrap(), 0)],
-                [Span::new(NonZeroRange::try_from(3..12).unwrap(), 0)],
-            )
+            test_subtract([Span::new(5..10, 0)], [Span::new(3..12, 0)],)
         );
     }
 
