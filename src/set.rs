@@ -942,12 +942,16 @@ impl<T> SortedRanges<T> {
     ///
     /// Heuristic: The bounds are checked first (O(1)) and the ranges are only
     /// searched (O(n)), if the point lies within [`SortedRanges::bounds`].
-    pub fn contains<TP: Into<u32>>(&self, x: TP, y: TP) -> bool
+    pub fn contains<TP: TryInto<u32>>(&self, x: TP, y: TP) -> bool
     where
         T: Into<u64> + Copy,
     {
-        let x_u32: u32 = x.into();
-        let y_u32: u32 = y.into();
+        let Ok(x_u32) = x.try_into() else {
+            return false;
+        };
+        let Ok(y_u32) = y.try_into() else {
+            return false;
+        };
         if !self.bounds.contains(&x_u32, &y_u32) {
             return false;
         }
@@ -1133,6 +1137,9 @@ mod tests {
         // Match boundaries: start inclusive, end exclusive
         assert!(ranges.contains(5u16, 0u16));
         assert!(!ranges.contains(10u16, 0u16));
+
+        assert!(ranges.contains(5usize, 0usize));
+        assert!(!ranges.contains(10usize, 0usize));
         Ok(())
     }
 

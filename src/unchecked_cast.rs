@@ -9,6 +9,7 @@
 ///
 pub trait UncheckedCast<T>: Copy {
     fn cast_unchecked(self) -> T;
+    fn cast_saturating(self) -> T;
 }
 
 macro_rules! impl_debug_checked_cast {
@@ -16,7 +17,7 @@ macro_rules! impl_debug_checked_cast {
         impl UncheckedCast<$dst> for $src {
             #[inline]
             fn cast_unchecked(self) -> $dst {
-                if core::mem::size_of::<$src>() > core::mem::size_of::<$dst>() {
+                if const { core::mem::size_of::<$src>() > core::mem::size_of::<$dst>() } {
                     debug_assert!(
                         self <= (<$dst>::MAX as $src),
                         "Expected {}{} <= {}::MAX",
@@ -26,6 +27,14 @@ macro_rules! impl_debug_checked_cast {
                     );
                 }
                 self as _
+            }
+
+            fn cast_saturating(self) -> $dst {
+                if const { core::mem::size_of::<$src>() > core::mem::size_of::<$dst>() } {
+                    (<$dst>::MAX as Self).min(self) as _
+                } else {
+                    self as _
+                }
             }
         }
     };
@@ -80,13 +89,34 @@ mod tests {
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic(expected = "Expected 256u64 <= u8::MAX")]
-    fn cast_invalid_u64_to_u8() {
+    fn unchecked_cast_invalid_u64_to_u8() {
         let _: u8 = 256u64.cast_unchecked();
     }
 
     #[test]
-    fn cast_u64_to_u8() {
+    fn unchecked_cast_u64_to_u8() {
         let cast: u8 = 255u64.cast_unchecked();
         assert_eq!(255u8, cast);
+    }
+
+    #[test]
+    fn saturating_cast_inrange_u64_to_u8() {
+        let cast: u8 = 0u64.cast_saturating();
+        assert_eq!(0u8, cast);
+        let cast: u8 = 255u64.cast_saturating();
+        assert_eq!(u8::MAX, cast);
+    }
+    #[test]
+    fn saturating_cast_too_big_u64_to_u8() {
+        let cast: u8 = 256u64.cast_saturating();
+        assert_eq!(u8::MAX, cast);
+    }
+
+    #[test]
+    fn cast_same_type() {
+        let cast: u8 = 0u8.cast_saturating();
+        assert_eq!(0u8, cast);
+        let cast: u8 = 0u8.cast_unchecked();
+        assert_eq!(0u8, cast);
     }
 }
