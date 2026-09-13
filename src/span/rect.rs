@@ -12,6 +12,7 @@ use crate::{ImageDimension, NonZeroRange, Roi, SignedNonZeroable, Span, Unchecke
 #[derive(Clone)]
 pub struct RectSpanIter<T> {
     span: Span<T>,
+    y_start: T,
     y_end: T,
 }
 
@@ -24,6 +25,7 @@ impl<T: SignedNonZeroable + Ord + Debug + Copy + Add<Output = T> + PartialEq> Re
         };
         Self {
             span,
+            y_start: rect.y.start,
             y_end: rect.y.end,
         }
     }
@@ -33,7 +35,9 @@ impl<T: UncheckedCast<u32>> ImageDimension for RectSpanIter<T> {
     fn roi(&self) -> Roi<u32> {
         let x_start = self.span.x.start.cast_unchecked();
         let x_end = self.span.x.end.cast_unchecked();
-        let y_start = self.span.y.cast_unchecked();
+        // Declared start, not the cursor: `roi()` stays stable while iterating
+        // (and stays valid once exhausted, when `span.y == y_end`).
+        let y_start = self.y_start.cast_unchecked();
         let y_end = self.y_end.cast_unchecked();
         debug_assert!(x_start < x_end);
         debug_assert!(y_start < y_end);

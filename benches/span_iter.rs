@@ -193,6 +193,7 @@ fn bench_pipeline(c: &mut Criterion) {
                     dilate_union(r.into_spans().with_bounds(W, H), radius),
                     clip_bounds,
                 )
+                .unwrap()
                 .into_ranges::<Range<u32>>(),
             );
         });
@@ -209,6 +210,7 @@ fn bench_pipeline(c: &mut Criterion) {
                     dilate_union(Union::new(a.clone(), b.clone()).with_bounds(W, H), radius),
                     clip_bounds,
                 )
+                .unwrap()
                 .into_ranges::<Range<u32>>(),
             );
         });
@@ -225,6 +227,7 @@ fn bench_pipeline(c: &mut Criterion) {
                     Subtract::new(Union::new(a.clone(), b.clone()), hole.clone()),
                     clip_bounds,
                 )
+                .unwrap()
                 .into_ranges::<Range<u32>>(),
             );
         });
@@ -240,6 +243,7 @@ fn bench_pipeline(c: &mut Criterion) {
                     dilate_acc(r.into_spans().with_bounds(W, H), radius),
                     clip_bounds,
                 )
+                .unwrap()
                 .into_ranges::<Range<u32>>(),
             );
         });

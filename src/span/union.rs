@@ -44,14 +44,8 @@ impl<TA: Iterator<Item: Clone> + Clone, TB: Iterator<Item: Clone> + Clone> Clone
 impl<TA: Iterator, TB: Iterator> Union<TA, TB> {
     pub fn new(a: TA, b: TB) -> Self {
         Self {
-            a: Peekable {
-                parent: a,
-                pending: None,
-            },
-            b: Peekable {
-                parent: b,
-                pending: None,
-            },
+            a: Peekable::new(a),
+            b: Peekable::new(b),
         }
     }
 }

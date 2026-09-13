@@ -1,7 +1,10 @@
 use std::fmt::Debug;
+use std::iter::FusedIterator;
 use std::ops::{Add, Sub};
 
-use crate::{ImageDimension, NonZeroRange, Roi, SignedNonZeroable, Span};
+use crate::{
+    ImageDimension, NonZeroRange, PipelineEmptyError, PipelineError, Roi, SignedNonZeroable, Span,
+};
 
 pub struct ClipSpanIter<TIter, T: SignedNonZeroable> {
     parent: TIter,
@@ -14,49 +17,38 @@ impl<TIter, T> ClipSpanIter<TIter, T>
 where
     TIter: Iterator<Item = Span<T>> + ImageDimension,
     T: SignedNonZeroable
-        + TryFrom<u32, Error: Debug>
+        + TryFrom<u32, Error: Into<PipelineError>>
         + Ord
         + Add<Output = T>
         + Sub<Output = T>
         + Copy
         + Debug,
 {
-    pub fn new(mut parent: TIter, roi: impl Into<Roi<u32>>) -> Self {
+    pub fn new(mut parent: TIter, roi: impl Into<Roi<u32>>) -> Result<Self, PipelineError> {
         let roi = roi.into();
-        let pb = parent.roi();
+        let output_bounds = parent.roi().intersection(&roi).ok_or(PipelineEmptyError)?;
 
-        let x_start = pb.x.start.max(roi.x.start);
-        let y_start = pb.y.start.max(roi.y.start);
-        let x_end = pb.x.end.min(roi.x.end);
-        let y_end = pb.y.end.min(roi.y.end);
-
-        let output_bounds = Roi {
-            x: NonZeroRange::new(x_start..x_end),
-            y: NonZeroRange::new(y_start..y_end),
-        };
-        // This proofs, that ClipSpanIter::new should be fallible
-        // We also have the problem of calling parent.next() after None
-        debug_assert_eq!(pb.intersection(&roi), Some(output_bounds));
-
+        let x_start = T::try_from(output_bounds.x.start).map_err(Into::into)?;
+        let x_end = T::try_from(output_bounds.x.end).map_err(Into::into)?;
+        let y_start = T::try_from(output_bounds.y.start).map_err(Into::into)?;
+        let y_end = T::try_from(output_bounds.y.end).map_err(Into::into)?;
         let clip = Roi {
-            x: NonZeroRange::new(
-                T::try_from(x_start).expect("x_start overflow")
-                    ..T::try_from(x_end).expect("x_end overflow"),
-            ),
-            y: NonZeroRange::new(
-                T::try_from(y_start).expect("y_start overflow")
-                    ..T::try_from(y_end).expect("y_end overflow"),
-            ),
+            x: NonZeroRange::new_unchecked(x_start..x_end),
+            y: NonZeroRange::new_unchecked(y_start..y_end),
         };
 
-        let pending = parent.find(|span| span.y >= clip.y.start);
+        // First in-range span; `None` means empty output, which must fail here
+        // since a constructed iterator encodes exhaustiveness as `pending == None`.
+        let pending = parent
+            .find(|span| span.y >= clip.y.start)
+            .ok_or(PipelineEmptyError)?;
 
-        Self {
+        Ok(Self {
             parent,
             clip,
             output_bounds,
-            pending,
-        }
+            pending: Some(pending),
+        })
     }
 }
 
@@ -77,10 +69,11 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let span = self.pending.take().or_else(|| self.parent.next())?;
+            let span = self.pending.take()?;
             if span.y >= self.clip.y.end {
                 return None;
             }
+            self.pending = self.parent.next();
             let range = span.x.intersection(&self.clip.x);
             if let Some(range) = range {
                 return Some(Span {
@@ -99,34 +92,43 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
     }
 }
 
+impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<Output = T> + Copy>
+    FusedIterator for ClipSpanIter<TIter, T>
+{
+}
+
 #[cfg(test)]
 mod tests {
 
-    use crate::{ImaskSet, Roi};
+    use testresult::TestResult;
+
+    use crate::{ImaskSet, PipelineError, Roi};
 
     use super::*;
 
     #[test]
-    fn smaller_bounds_do_crop() {
+    fn smaller_bounds_do_crop() -> TestResult {
         let src = Roi::new(10u32..20, 10..20);
         let bounds = Roi::new(12u32..17, 12..17);
         let expected = bounds.into_spans().collect::<Vec<_>>();
-        let clipped = ClipSpanIter::new(src.into_spans(), bounds).collect::<Vec<_>>();
+        let clipped = ClipSpanIter::new(src.into_spans(), bounds)?.collect::<Vec<_>>();
         assert_eq!(expected, clipped);
+        Ok(())
     }
 
     #[test]
-    fn bigger_bounds_have_no_effect() {
+    fn bigger_bounds_have_no_effect() -> TestResult {
         let src = Roi::new(10u32..20, 10..20);
         let iter = src.into_spans();
         let expected = iter.clone().collect::<Vec<_>>();
         let bounds = Roi::new(0u32..100, 0..100);
-        let clipped = ClipSpanIter::new(iter, bounds).collect::<Vec<_>>();
+        let clipped = ClipSpanIter::new(iter, bounds)?.collect::<Vec<_>>();
         assert_eq!(expected, clipped);
+        Ok(())
     }
 
     #[test]
-    fn with_no_overlapping_parts() {
+    fn with_no_overlapping_parts() -> TestResult {
         let src = Roi::new(10u32..20, 10..20);
         let iter = src.into_spans();
         let expected = iter.clone().collect::<Vec<_>>();
@@ -134,22 +136,41 @@ mod tests {
         let clipped = ClipSpanIter::new(
             iter.union(Roi::new(100u32..110, 10..20).into_spans()),
             bounds,
-        )
+        )?
         .collect::<Vec<_>>();
         assert_eq!(expected, clipped);
+        Ok(())
     }
 
     #[test]
-    fn clip_returns_intersection_bounds() {
+    fn clip_returns_intersection_bounds() -> TestResult {
         let source = Roi::new(0u32..100, 0..100);
         let roi = Roi::new(10u32..90, 10..120);
         let expected_bounds = Roi::new(10u32..90, 10..100);
 
-        let clipped = ClipSpanIter::new(source.into_spans(), roi);
+        let clipped = ClipSpanIter::new(source.into_spans(), roi)?;
         assert_eq!(expected_bounds, clipped.roi());
 
         let spans: Vec<_> = clipped.collect();
         let expected_spans: Vec<_> = expected_bounds.into_spans().collect();
         assert_eq!(expected_spans, spans);
+        Ok(())
+    }
+
+    #[test]
+    fn disjoint_bounds_returns_empty_error() {
+        let src = Roi::new(10u32..20, 10..20);
+        let bounds = Roi::new(30u32..40, 30..40);
+        assert_eq!(
+            ClipSpanIter::new(src.into_spans(), bounds).err(),
+            Some(PipelineError::Empty)
+        );
+    }
+
+    #[test]
+    fn unrepresentable_bounds_returns_incompatible_size() {
+        let parent = vec![Span::new(0u8..10, 0u8)].with_roi(Roi::new(0u32..300, 0..10));
+        let err = ClipSpanIter::new(parent, Roi::new(0u32..300, 0..10)).err();
+        assert!(matches!(err, Some(PipelineError::IncompatibleSize(_))));
     }
 }

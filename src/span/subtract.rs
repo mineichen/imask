@@ -1,9 +1,8 @@
-use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::iter::FusedIterator;
 
 use super::peekable::Peekable;
-use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, Span};
+use crate::{ImageDimension, NonZeroRange, Roi, Span};
 
 pub struct Subtract<TA: Iterator, TB: Iterator> {
     a: Peekable<TA>,
@@ -34,14 +33,8 @@ impl<TA: Iterator<Item: Clone> + Clone, TB: Iterator<Item: Clone> + Clone> Clone
 impl<TA: Iterator, TB: Iterator> Subtract<TA, TB> {
     pub fn new(a: TA, b: TB) -> Self {
         Self {
-            a: Peekable {
-                parent: a,
-                pending: None,
-            },
-            b: Peekable {
-                parent: b,
-                pending: None,
-            },
+            a: Peekable::new(a),
+            b: Peekable::new(b),
         }
     }
 }
@@ -52,60 +45,57 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
     type Item = Span<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let mut cur = self.a.pending_or_fetch()?;
-
-            loop {
-                let Some(peek_b) = self.b.peek() else {
-                    return Some(cur);
-                };
-
-                match peek_b.y.cmp(&cur.y) {
-                    Ordering::Greater => return Some(cur),
-                    Ordering::Less => {
-                        self.b.next();
-                        continue;
-                    }
-                    Ordering::Equal => {}
-                }
-
-                if peek_b.x.end <= cur.x.start {
-                    self.b.next();
-                    continue;
-                }
-                if peek_b.x.start >= cur.x.end {
-                    return Some(cur);
-                }
-
-                if peek_b.x.start <= cur.x.start {
-                    if peek_b.x.end >= cur.x.end {
-                        break;
-                    } else {
-                        cur = Span {
-                            x: NonZeroRange::new_debug_checked_zeroable(peek_b.x.end, cur.x.end),
-                            y: cur.y,
+        let mut cur = self.a.pending.take()?;
+        let r = match self.b.pending.take() {
+            None => cur,
+            Some(mut s) => {
+                loop {
+                    if s.y < cur.y || (s.y == cur.y && s.x.end <= cur.x.start) {
+                        // `s` is behind `cur`, but other subtractors might apply
+                        match self.b.parent.next() {
+                            Some(next) => s = next,
+                            _ => break cur,
                         };
-                        self.b.next();
-                        continue;
-                    }
-                } else {
-                    let left = Span {
-                        x: NonZeroRange::new_debug_checked_zeroable(cur.x.start, peek_b.x.start),
-                        y: cur.y,
-                    };
-                    if peek_b.x.end >= cur.x.end {
-                        return Some(left);
+                    } else if s.y > cur.y || s.x.start >= cur.x.end {
+                        // `s` is ahead of `cur`, return cur
+                        self.b.pending = Some(s);
+                        break cur;
                     } else {
-                        self.a.pending = Some(Span {
-                            x: NonZeroRange::new_debug_checked_zeroable(peek_b.x.end, cur.x.end),
-                            y: cur.y,
+                        let remainer_left = (s.x.start > cur.x.start).then(|| {
+                            let x = NonZeroRange::new_unchecked(cur.x.start..s.x.start);
+                            Span { x, y: cur.y }
                         });
-                        self.b.next();
-                        return Some(left);
+                        let remainer_right = (s.x.end < cur.x.end).then(|| {
+                            let x = NonZeroRange::new_unchecked(s.x.end..cur.x.end);
+                            Span { x, y: cur.y }
+                        });
+                        cur = match (remainer_left, remainer_right) {
+                            // Fully covered: drop `cur`, `s` may cover later spans.
+                            (None, None) => self.a.parent.next()?,
+                            (None, Some(remainder)) => match self.b.parent.next() {
+                                Some(sub) => {
+                                    s = sub;
+                                    remainder
+                                }
+                                None => break remainder,
+                            },
+                            (Some(emit), Some(right)) => {
+                                // The only branch which doesn't need a a.refetch on return
+                                self.a.pending = Some(right);
+                                self.b.pending = self.b.parent.next();
+                                return Some(emit);
+                            }
+                            (Some(emit), None) => {
+                                self.b.pending = Some(s);
+                                break emit;
+                            }
+                        };
                     }
                 }
             }
-        }
+        };
+        self.a.pending = self.a.parent.next();
+        Some(r)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -127,6 +117,27 @@ where
 mod tests {
     use super::*;
     use crate::{ImaskSet, SortedRanges};
+
+    #[test]
+    fn subtract_left_edge_preserves_trailing_rows() {
+        // (None,Some): s covers left edge of middle row, b exhausts,
+        // trailing y=2 must survive.
+        assert_eq!(
+            vec![
+                Span::new(0..10, 0u16),
+                Span::new(5..10, 1u16),
+                Span::new(0..10, 2u16),
+            ],
+            test_subtract(
+                [
+                    Span::new(0..10, 0),
+                    Span::new(0..10, 1),
+                    Span::new(0..10, 2)
+                ],
+                [Span::new(0..5, 1)],
+            )
+        );
+    }
 
     #[test]
     fn subtract_has_correct_bounds() {

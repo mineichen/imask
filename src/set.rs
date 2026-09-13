@@ -9,8 +9,8 @@ use std::{
 use crate::visualize_iter::IterVisualizer;
 use crate::{
     CreateRange, ImageDimension, IncompatibleSizeError, IntoPipelineOutput, MaybeResult,
-    NonZeroRange, PipelineError, Roi, SignedNonZeroable, SortedRangesSpanIter, Span, UncheckedCast,
-    WithBounds, WithRoi,
+    NonZeroRange, PipelineEmptyError, PipelineError, Roi, SignedNonZeroable, SortedRangesSpanIter,
+    Span, UncheckedCast, WithBounds, WithRoi,
     span::{ClipSpanIter, FoldInlineSpanIter},
 };
 
@@ -122,7 +122,11 @@ pub trait ImaskSet: IntoIterator + Sized {
     fn intersect<TOther: IntoIterator<Item = Span<T>>, T>(
         self,
         other: TOther,
-    ) -> crate::span::Intersect<Self::IntoIter, TOther::IntoIter> {
+    ) -> Result<crate::span::Intersect<Self::IntoIter, TOther::IntoIter>, PipelineEmptyError>
+    where
+        Self::IntoIter: ImageDimension,
+        TOther::IntoIter: ImageDimension,
+    {
         crate::span::Intersect::new(self.into_iter(), other.into_iter())
     }
 
@@ -161,11 +165,14 @@ pub trait ImaskSet: IntoIterator + Sized {
         crate::span::ClusterSpanIter::new(self.into_iter())
     }
 
-    fn clip<T>(self, roi: impl Into<Roi<u32>>) -> ClipSpanIter<Self::IntoIter, T>
+    fn clip<T>(
+        self,
+        roi: impl Into<Roi<u32>>,
+    ) -> Result<ClipSpanIter<Self::IntoIter, T>, PipelineError>
     where
         Self::IntoIter: Iterator<Item = Span<T>> + ImageDimension,
         T: SignedNonZeroable
-            + TryFrom<u32, Error: Debug>
+            + TryFrom<u32, Error: Into<PipelineError>>
             + Ord
             + Add<Output = T>
             + Sub<Output = T>
