@@ -3,7 +3,7 @@ use std::iter::Enumerate;
 use std::marker::PhantomData;
 use std::num::NonZero;
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span, UncheckedCast};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Span, UncheckedCast};
 
 fn byte_is_nonzero(b: &u8) -> bool {
     *b != 0
@@ -29,8 +29,11 @@ impl<I: Iterator, TOut> BitmapToSpanIter<I, TOut> {
 }
 
 impl<I, TOut> ImageDimension for BitmapToSpanIter<I, TOut> {
-    fn bounds(&self) -> crate::Rect<u32> {
-        Rect::new(0, 0, self.width, self.height)
+    fn roi(&self) -> crate::Roi<u32> {
+        crate::Roi {
+            x: NonZeroRange::from_dimension(self.width),
+            y: NonZeroRange::from_dimension(self.height),
+        }
     }
 
     fn width(&self) -> NonZero<u32> {

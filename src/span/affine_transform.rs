@@ -4,18 +4,18 @@ use std::num::NonZero;
 
 use nalgebra::{Matrix3, Vector3};
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, PipelineError, Rect, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, PipelineError, Roi, Span};
 
 fn transform_point(m: &Matrix3<f64>, x: f64, y: f64) -> (f64, f64) {
     let v = m * Vector3::new(x, y, 1.0);
     (v[0], v[1])
 }
 
-fn transform_bounds_rect(parent: Rect<u32>, matrix: &Matrix3<f64>) -> Option<Rect<u32>> {
-    let left = parent.x as f64 - 0.5;
-    let right = (parent.x + parent.width.get()) as f64 - 0.5;
-    let top = parent.y as f64 - 0.5;
-    let bottom = (parent.y + parent.height.get()) as f64 - 0.5;
+fn transform_bounds_rect(parent: Roi<u32>, matrix: &Matrix3<f64>) -> Option<Roi<u32>> {
+    let left = parent.x.start as f64 - 0.5;
+    let right = parent.x.end as f64 - 0.5;
+    let top = parent.y.start as f64 - 0.5;
+    let bottom = parent.y.end as f64 - 0.5;
 
     let corners = [
         transform_point(matrix, left, top),
@@ -38,10 +38,10 @@ fn transform_bounds_rect(parent: Rect<u32>, matrix: &Matrix3<f64>) -> Option<Rec
     let bx_end = max_x.floor() as u32 + 1;
     let by_end = max_y.floor() as u32 + 1;
 
-    let width = NonZero::new(bx_end.saturating_sub(bx))?;
-    let height = NonZero::new(by_end.saturating_sub(by))?;
-
-    Some(Rect::new(bx, by, width, height))
+    Some(Roi {
+        x: NonZeroRange::try_from(bx..bx_end).ok()?,
+        y: NonZeroRange::try_from(by..by_end).ok()?,
+    })
 }
 
 fn quad_corners(matrix: &Matrix3<f64>, col: u64, row: u64, w: u64) -> [(f64, f64); 4] {
@@ -280,7 +280,7 @@ impl Ord for HeapEntry {
 
 pub struct AffineTransformHeap {
     heap: BinaryHeap<HeapEntry>,
-    bounds: Rect<u32>,
+    bounds: Roi<u32>,
     pending: Option<Span<u32>>,
 }
 
@@ -289,7 +289,7 @@ impl AffineTransformHeap {
         spans: I,
         matrix: &Matrix3<f64>,
     ) -> Result<Self, PipelineError> {
-        let parent_bounds = spans.bounds();
+        let parent_bounds = spans.roi();
         let bounds = transform_bounds_rect(parent_bounds, matrix).ok_or(PipelineError::Empty)?;
 
         let mut entries: Vec<HeapEntry> = Vec::new();
@@ -320,20 +320,20 @@ impl AffineTransformHeap {
             self.heap.push(entry);
         }
 
-        debug_assert!(result.x.end <= self.bounds.x + self.bounds.width.get());
-        debug_assert!(result.y < self.bounds.y + self.bounds.height.get());
+        debug_assert!(result.x.end <= self.bounds.x.end);
+        debug_assert!(result.y < self.bounds.y.end);
 
         Some(result)
     }
 }
 
 impl ImageDimension for AffineTransformHeap {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
     fn width(&self) -> NonZero<u32> {
-        self.bounds.width
+        self.bounds.width()
     }
 }
 
@@ -378,10 +378,6 @@ impl Iterator for AffineTransformHeap {
 mod tests {
     use super::*;
 
-    fn nz(n: u32) -> NonZero<u32> {
-        NonZero::new(n).unwrap()
-    }
-
     fn print_bitmap(w: u32, h: u32, spans: &[Span<u32>], label: &str) {
         let mut bitmap = vec![false; (w * h) as usize];
         for span in spans {
@@ -422,7 +418,7 @@ mod tests {
         let cy = 3.0_f64;
         let matrix = Matrix3::new(0.0, 1.0, cx - cy, -1.0, 0.0, cx + cy, 0.0, 0.0, 1.0);
 
-        let roi = Rect::new(0, 0, nz(6), nz(5));
+        let roi = Roi::new(0u32..6, 0u32..5);
         let wrapped = crate::WithRoi::new(l_spans.into_iter(), roi);
         let heap = AffineTransformHeap::new(wrapped, &matrix).unwrap();
         let result: Vec<Span<u32>> = heap.collect();
@@ -442,7 +438,7 @@ mod tests {
 
     #[test]
     fn translate_completely_negative_returns_empty() {
-        let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
+        let rect = Roi::new(1u32..4, 1u32..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
         assert!(matches!(
@@ -453,7 +449,7 @@ mod tests {
 
     #[test]
     fn scale_from_center_no_gaps() {
-        let rect = crate::Rect::new(2u32, 2, nz(3), nz(3));
+        let rect = Roi::new(2u32..5, 2u32..5);
         let spans = rect.into_spans();
 
         let cx = 3.0_f64;
@@ -572,7 +568,7 @@ mod tests {
 
     fn assert_rotated_rect_no_gaps(rect_side: u32, canvas_side: u32, angle_deg: f64) {
         let offset = (canvas_side - rect_side) / 2;
-        let rect = crate::Rect::new(offset, offset, nz(rect_side), nz(rect_side));
+        let rect = Roi::new(offset..offset + rect_side, offset..offset + rect_side);
         let spans = rect.into_spans();
 
         let cx = (canvas_side as f64) / 2.0;
@@ -668,7 +664,7 @@ mod tests {
 
     fn assert_scaled_rotated_no_gaps(rect_side: u32, scale: f64, angle_deg: f64, canvas_side: u32) {
         let offset = (canvas_side - rect_side) / 2;
-        let rect = crate::Rect::new(offset, offset, nz(rect_side), nz(rect_side));
+        let rect = Roi::new(offset..offset + rect_side, offset..offset + rect_side);
         let spans = rect.into_spans();
 
         let cx = (canvas_side as f64) / 2.0;
@@ -761,7 +757,7 @@ mod tests {
 
     #[test]
     fn rotate_20x20_square_30deg_sorted_disjoint() {
-        let rect = crate::Rect::new(15u32, 15, nz(20), nz(20));
+        let rect = Roi::new(15u32..35, 15..35);
         let spans = rect.into_spans();
 
         let cx = 24.5_f64;
@@ -803,7 +799,7 @@ mod tests {
 
     #[test]
     fn translate_partially_out_left() {
-        let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
+        let rect = Roi::new(1u32..4, 1..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -2.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
         let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
@@ -815,7 +811,7 @@ mod tests {
 
     #[test]
     fn translate_partially_out_right() {
-        let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
+        let rect = Roi::new(1u32..4, 1..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, 4.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
         let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
@@ -827,7 +823,7 @@ mod tests {
 
     #[test]
     fn translate_partially_out_top() {
-        let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
+        let rect = Roi::new(1u32..4, 1..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, -2.0, 0.0, 0.0, 1.0);
         let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
@@ -836,7 +832,7 @@ mod tests {
 
     #[test]
     fn translate_partially_out_bottom() {
-        let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
+        let rect = Roi::new(1u32..4, 1..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 1.0);
         let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
@@ -848,7 +844,7 @@ mod tests {
 
     #[test]
     fn translate_partially_out_corner() {
-        let rect = crate::Rect::new(1u32, 1, nz(3), nz(3));
+        let rect = Roi::new(1u32..4, 1..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -2.0, 0.0, 1.0, -2.0, 0.0, 0.0, 1.0);
         let result: Vec<Span<u32>> = AffineTransformHeap::new(spans, &matrix).unwrap().collect();
@@ -857,7 +853,7 @@ mod tests {
 
     #[test]
     fn rotate_100x100_at_offset() {
-        let rect = crate::Rect::new(100u32, 100, nz(100), nz(100));
+        let rect = Roi::new(100u32..200, 100u32..200);
         let spans = rect.into_spans();
 
         let cx = 150.0_f64;
@@ -865,38 +861,45 @@ mod tests {
         let matrix = rotation_matrix(cx, cy, 45.0);
 
         let heap = AffineTransformHeap::new(spans, &matrix).unwrap();
-        let bounds = heap.bounds();
+        let bounds = heap.roi();
 
-        assert!(bounds.x >= 78 && bounds.x <= 82, "bounds.x={}", bounds.x);
-        assert!(bounds.y >= 78 && bounds.y <= 82, "bounds.y={}", bounds.y);
         assert!(
-            bounds.x + bounds.width.get() >= 218 && bounds.x + bounds.width.get() <= 224,
-            "right edge={}",
-            bounds.x + bounds.width.get()
+            (78..=82).contains(&bounds.x.start),
+            "bounds.x={}",
+            bounds.x.start
         );
         assert!(
-            bounds.y + bounds.height.get() >= 218 && bounds.y + bounds.height.get() <= 224,
+            (78..=82).contains(&bounds.y.start),
+            "bounds.y={}",
+            bounds.y.start
+        );
+        assert!(
+            (218..=224).contains(&bounds.x.end),
+            "right edge={}",
+            bounds.x.end
+        );
+        assert!(
+            (218..=224).contains(&bounds.y.end),
             "bottom edge={}",
-            bounds.y + bounds.height.get()
+            bounds.y.end
         );
 
         let result: Vec<Span<u32>> = heap.collect();
 
         for span in &result {
             assert!(
-                span.x.start >= bounds.x,
+                span.x.start >= bounds.x.start,
                 "span {:?} starts before bounds.x={}",
                 span,
-                bounds.x
+                bounds.x.start
             );
             assert!(
-                span.x.end <= bounds.x + bounds.width.get(),
+                span.x.end <= bounds.x.end,
                 "span {:?} extends past right edge={}",
                 span,
-                bounds.x + bounds.width.get()
+                bounds.x.end
             );
-            assert!(span.y >= bounds.y);
-            assert!(span.y < bounds.y + bounds.height.get());
+            assert!(bounds.y.contains(&span.y));
         }
 
         let pixel_count: u32 = result.iter().map(|s| s.x.end - s.x.start).sum();

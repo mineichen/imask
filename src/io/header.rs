@@ -1,17 +1,19 @@
 use std::io;
 
-use super::{HEADER_SIZE, PROTOCOL_VERSION, roi::Roi};
+use crate::Roi;
+
+use super::{HEADER_SIZE, PROTOCOL_VERSION};
 
 #[derive(Debug, Clone)]
 pub(super) struct Header {
     version: u8,
     included_type: DataType,
     excluded_type: DataType,
-    pub roi: Roi,
+    pub roi: Roi<u32>,
 }
 
 impl Header {
-    pub fn new(included_type: DataType, excluded_type: DataType, roi: Roi) -> Self {
+    pub fn new(included_type: DataType, excluded_type: DataType, roi: Roi<u32>) -> Self {
         Self {
             version: PROTOCOL_VERSION,
             excluded_type,

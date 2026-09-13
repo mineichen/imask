@@ -1,52 +1,44 @@
-use std::{io, num::NonZeroU32};
+use std::io;
+
+use crate::{NonZeroRange, Roi};
 
 use super::{U32_SIZE, read_u32, write_u32};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Roi {
-    pub offset_x: u32,
-    pub offset_y: u32,
-    pub width: NonZeroU32,
-    pub height: NonZeroU32,
-}
-
-impl Roi {
-    #[cfg(test)]
-    pub(super) const fn new(
-        offset_x: u32,
-        offset_y: u32,
-        width: NonZeroU32,
-        height: NonZeroU32,
-    ) -> Self {
-        Self {
-            offset_x,
-            offset_y,
-            width,
-            height,
-        }
-    }
-
+impl Roi<u32> {
     pub fn to_bytes(self) -> [u8; U32_SIZE * 4] {
         let mut buf = [0u8; U32_SIZE * 4];
-        write_u32(&mut buf[..], self.offset_x);
-        write_u32(&mut buf[U32_SIZE..], self.offset_y);
-        write_u32(&mut buf[U32_SIZE * 2..], self.width.get());
-        write_u32(&mut buf[U32_SIZE * 3..], self.height.get());
+        write_u32(&mut buf[..], self.x.start);
+        write_u32(&mut buf[U32_SIZE..], self.y.start);
+        write_u32(&mut buf[U32_SIZE * 2..], self.width().get());
+        write_u32(&mut buf[U32_SIZE * 3..], self.height().get());
         buf
     }
 
     pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
         let width_pos = U32_SIZE * 2;
         let height_pos = U32_SIZE * 3;
+        let offset_x = read_u32(bytes);
+        let offset_y = read_u32(&bytes[U32_SIZE..]);
+        let width = read_u32(&bytes[width_pos..]);
+        let height = read_u32(&bytes[height_pos..]);
+
+        if !(1..(u32::MAX - offset_x)).contains(&width) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid value for width",
+            ));
+        }
+
+        if !(1..(u32::MAX - offset_y)).contains(&height) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid value for height",
+            ));
+        }
+
         Ok(Self {
-            offset_x: read_u32(bytes),
-            offset_y: read_u32(&bytes[U32_SIZE..]),
-            width: read_u32(&bytes[width_pos..]).try_into().map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidData, "Unexpected zero for width")
-            })?,
-            height: read_u32(&bytes[height_pos..]).try_into().map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidData, "Unexpected zero for height")
-            })?,
+            x: NonZeroRange::new_unchecked(offset_x..offset_x + width),
+            y: NonZeroRange::new_unchecked(offset_y..offset_y + height),
         })
     }
 }

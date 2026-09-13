@@ -7,7 +7,7 @@ use std::{
 
 use num_traits::One;
 
-use crate::{ImageDimension, Rect, SignedNonZeroable, Span, UncheckedCast};
+use crate::{ImageDimension, NonZeroRange, Roi, SignedNonZeroable, Span, UncheckedCast};
 
 #[derive(Clone)]
 pub struct RectSpanIter<T> {
@@ -16,26 +16,30 @@ pub struct RectSpanIter<T> {
 }
 
 impl<T: SignedNonZeroable + Ord + Debug + Copy + Add<Output = T> + PartialEq> RectSpanIter<T> {
-    pub fn new(rect: Rect<T>) -> Self {
-        let span = Span::new(rect.x..rect.len_x().into(), rect.y);
+    pub fn new(rect: impl Into<Roi<T>>) -> Self {
+        let rect = rect.into();
+        let span = Span {
+            x: rect.x,
+            y: rect.y.start,
+        };
         Self {
             span,
-            y_end: rect.len_y().into(),
+            y_end: rect.y.end,
         }
     }
 }
 
 impl<T: UncheckedCast<u32>> ImageDimension for RectSpanIter<T> {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         let x_start = self.span.x.start.cast_unchecked();
         let x_end = self.span.x.end.cast_unchecked();
         let y_start = self.span.y.cast_unchecked();
         let y_end = self.y_end.cast_unchecked();
-        Rect {
-            x: x_start,
-            y: y_start,
-            width: NonZeroU32::new(x_end - x_start).expect("X mustn't be zero length"),
-            height: NonZeroU32::new(y_end - y_start).expect("Y mustn't be zero length"),
+        debug_assert!(x_start < x_end);
+        debug_assert!(y_start < y_end);
+        Roi {
+            x: NonZeroRange::new_unchecked(x_start..x_end),
+            y: NonZeroRange::new_unchecked(y_start..y_end),
         }
     }
 
@@ -75,15 +79,12 @@ impl<T: Ord + One + Copy + Add<Output = T> + Sub<Output = T> + TryInto<usize>> F
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-
-    use crate::{Rect, Span};
+    use crate::Span;
 
     use super::*;
-    const NON_ZERO_10: NonZeroU32 = NonZeroU32::new(10).unwrap();
     #[test]
     fn rect_iter() {
-        let rect = Rect::new(10u32, 10, NON_ZERO_10, NON_ZERO_10);
+        let rect = Roi::new(10u32..20, 10..20);
         let iter = RectSpanIter::new(rect);
         let expected: Vec<Span<u32>> = (0..10).map(|y| Span::new(10..20, y + 10)).collect();
         assert_eq!(expected, iter.collect::<Vec<_>>());

@@ -1,6 +1,6 @@
 use std::{iter::FusedIterator, num::NonZero};
 
-use crate::{ImageDimension, Rect};
+use crate::{ImageDimension, Roi};
 
 #[cfg(feature = "async-io")]
 pin_project_lite::pin_project! {
@@ -57,8 +57,8 @@ impl<I: futures_core::Stream, F: FnMut(&I::Item)> futures_core::Stream for Inspe
 impl<I: FusedIterator, F: FnMut(&I::Item)> FusedIterator for InspectSpans<I, F> {}
 
 impl<I: ImageDimension, F> ImageDimension for InspectSpans<I, F> {
-    fn bounds(&self) -> Rect<u32> {
-        self.inner.bounds()
+    fn roi(&self) -> Roi<u32> {
+        self.inner.roi()
     }
 
     fn width(&self) -> NonZero<u32> {
@@ -109,10 +109,10 @@ mod tests {
     #[test]
     fn forwards_image_dimension() {
         let inner = [0u32..10].with_bounds(WIDTH, WIDTH);
-        let expected_bounds = inner.bounds();
+        let expected_bounds = inner.roi();
         let expected_width = inner.width();
         let inspect = inner.inspect_spans(|_| {});
-        assert_eq!(inspect.bounds(), expected_bounds);
+        assert_eq!(inspect.roi(), expected_bounds);
         assert_eq!(inspect.width(), expected_width);
     }
 }

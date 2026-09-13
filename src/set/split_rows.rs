@@ -10,8 +10,8 @@ pub struct SplitRowsIter<T, R> {
 
 impl<T: ImageDimension, R> SplitRowsIter<T, R> {
     pub fn new(parent: T) -> Self {
-        assert_eq!(parent.bounds().x, 0);
-        assert_eq!(parent.bounds().y, 0);
+        assert_eq!(parent.roi().x.start, 0);
+        assert_eq!(parent.roi().y.start, 0);
         Self {
             parent,
             pending: None,
@@ -87,8 +87,8 @@ where
         self.parent.width()
     }
 
-    fn bounds(&self) -> crate::Rect<u32> {
-        self.parent.bounds()
+    fn roi(&self) -> crate::Roi<u32> {
+        self.parent.roi()
     }
 }
 #[cfg(feature = "range-set-blaze-0_5")]

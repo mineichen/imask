@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::num::IntErrorKind;
 use std::ops::{Add, Range};
-use std::{fmt::Debug, num::NonZeroU32};
 
 use num_traits::{One, SaturatingSub, Zero};
 
 use crate::{
     CheckedAddSigned, CreateRange, ImageDimension, ImaskSet, IncompatibleSizeError, NonZeroRange,
-    PipelineError, Rect, SignedNonZeroable, Span, UncheckedCast,
+    PipelineError, Roi, SignedNonZeroable, Span, UncheckedCast,
 };
 
 use super::union_all::UnionAll;
@@ -19,7 +19,7 @@ where
 {
     inner: UnionAll<ShiftedSpanIter<I, T>>,
     offset: T,
-    bounds: Rect<u32>,
+    bounds: Roi<u32>,
 }
 
 impl<I, T> DilateSpanIter<I, T>
@@ -37,7 +37,7 @@ where
         + UncheckedCast<u32>,
 {
     pub fn new(iter: I, offset: T::NonZero) -> Result<Self, PipelineError> {
-        let bounds = iter.bounds();
+        let bounds = iter.roi();
         let x_offset: T = offset.into();
         let y_offset: T = offset.into();
         let mut iters: Vec<ShiftedSpanIter<I, T>> = Vec::new();
@@ -63,13 +63,14 @@ where
                 y_shift_unsigned: y_offset + y_delta,
             });
         }
-        let (x, width) = calculate_bound_dim(bounds.x, bounds.width, x_offset.cast_unchecked())?;
-        let (y, height) = calculate_bound_dim(bounds.y, bounds.height, y_offset.cast_unchecked())?;
+        let x = calculate_bound_dim(bounds.x, x_offset.cast_unchecked())?;
+        let y = calculate_bound_dim(bounds.y, y_offset.cast_unchecked())?;
+        let dilated_bounds = Roi { x, y };
 
         Ok(Self {
-            inner: UnionAll::new(iters.with_roi(Rect::new(x, y, width, height)))?,
+            inner: UnionAll::new(iters.with_roi(dilated_bounds))?,
             offset: y_offset,
-            bounds: Rect::new(x, y, width, height),
+            bounds: dilated_bounds,
         })
     }
 }
@@ -79,20 +80,19 @@ where
 /// Left dilation saturates at 0; all arithmetic happens widened in `u64`, so it cannot
 /// overflow. Only the (tight) result must still fit `u32`.
 fn calculate_bound_dim(
-    start: u32,
-    len: NonZeroU32,
+    range: NonZeroRange<u32>,
     offset: u32,
-) -> Result<(u32, NonZeroU32), IncompatibleSizeError> {
-    let (start, end) = (
-        u64::from(start),
-        u64::from(start) + u64::from(len.get()) + u64::from(offset),
-    );
-    let start = start.saturating_sub(u64::from(offset));
-    let width = u32::try_from(end - start).map_err(|_| IntErrorKind::PosOverflow)?;
-    Ok((
-        start as u32,
-        NonZeroU32::new(width).ok_or(IntErrorKind::PosOverflow)?,
-    ))
+) -> Result<NonZeroRange<u32>, IncompatibleSizeError> {
+    // Future: u32-overflow should be checked during construction
+    let offset = u64::from(offset);
+    let start = u64::from(range.start);
+    let end = u64::from(range.end) + offset;
+    let start = start.saturating_sub(offset);
+    if start < end {
+        Ok(NonZeroRange::new_unchecked(start as u32..end as u32))
+    } else {
+        Err(IntErrorKind::PosOverflow.into())
+    }
 }
 
 impl<I, T> Iterator for DilateSpanIter<I, T>
@@ -130,12 +130,12 @@ where
     I: Iterator<Item = Span<T>> + ImageDimension,
     T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + CheckedAddSigned,
 {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.bounds.width
+        self.bounds.width()
     }
 }
 
@@ -151,22 +151,24 @@ where
     I: ImageDimension + Iterator<Item = Span<T>>,
     T: Copy + Add<Output = T> + UncheckedCast<u32> + SignedNonZeroable,
 {
-    fn bounds(&self) -> Rect<u32> {
-        let parent_bounds = self.parent.bounds();
+    fn roi(&self) -> Roi<u32> {
+        let parent_bounds = self.parent.roi();
         let x_offset = self.x_offset.cast_unchecked();
         let y_shift = self.y_shift_unsigned.cast_unchecked();
 
-        let x = parent_bounds.x.saturating_sub(x_offset);
-        let y = parent_bounds.y.saturating_sub(y_shift);
-        let width = u32::create_non_zero(parent_bounds.width.get() + 2 * x_offset)
-            .expect("dilated width is always non-zero");
-        let height = parent_bounds.height;
+        let x_start = parent_bounds.x.start.saturating_sub(x_offset);
+        let x_end = parent_bounds.x.end + x_offset;
+        let y_start = parent_bounds.y.start.saturating_sub(y_shift);
+        let y_end = parent_bounds.y.end + y_shift;
 
-        Rect::new(x, y, width, height)
+        Roi {
+            x: NonZeroRange::new_unchecked(x_start..x_end),
+            y: NonZeroRange::new_unchecked(y_start..y_end),
+        }
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.bounds().width
+        self.roi().width()
     }
 }
 
@@ -202,7 +204,7 @@ where
 pub trait DilateStrategy<T> {
     /// Computes the bounds the dilated spans of inputs within `outer` occupy — `outer`
     /// dilated by the radius — or an error if they don't fit `u32`.
-    fn compute_bounds(&self, outer: Rect<u32>) -> Result<Rect<u32>, PipelineError>;
+    fn compute_bounds(&self, outer: Roi<u32>) -> Result<Roi<u32>, PipelineError>;
     /// Maps an input span — in original coordinates, possibly outside the input bounds —
     /// to its dilated counterpart in absolute coordinates, or `None` if the span
     /// contributes nothing.
@@ -242,11 +244,11 @@ where
     T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + UncheckedCast<u32>,
     T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
 {
-    fn compute_bounds(&self, outer: Rect<u32>) -> Result<Rect<u32>, PipelineError> {
+    fn compute_bounds(&self, outer: Roi<u32>) -> Result<Roi<u32>, PipelineError> {
         let radius = UncheckedCast::<u32>::cast_unchecked(self.radius);
-        let (x, width) = calculate_bound_dim(outer.x, outer.width, radius)?;
-        let (y, height) = calculate_bound_dim(outer.y, outer.height, radius)?;
-        Ok(Rect::new(x, y, width, height))
+        let x = calculate_bound_dim(outer.x, radius)?;
+        let y = calculate_bound_dim(outer.y, radius)?;
+        Ok(Roi { x, y })
     }
 
     #[inline]
@@ -289,22 +291,20 @@ where
     T: Ord + Copy + Debug + Add<Output = T> + UncheckedCast<u32>,
     T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
 {
-    fn compute_bounds(&self, outer: Rect<u32>) -> Result<Rect<u32>, PipelineError> {
+    fn compute_bounds(&self, outer: Roi<u32>) -> Result<Roi<u32>, PipelineError> {
         let radius = UncheckedCast::<u32>::cast_unchecked(self.radius);
         // apply keeps `start` as-is and only grows the end by `2 * radius` — in x and y
         // alike. All arithmetic happens widened in `u64`.
-        let x_end = u64::from(outer.x) + u64::from(outer.width.get()) + 2 * u64::from(radius);
-        let y_end = u64::from(outer.y) + u64::from(outer.height.get()) + 2 * u64::from(radius);
-        let width =
-            u32::try_from(x_end - u64::from(outer.x)).map_err(|_| IntErrorKind::PosOverflow)?;
-        let height =
-            u32::try_from(y_end - u64::from(outer.y)).map_err(|_| IntErrorKind::PosOverflow)?;
-        Ok(Rect::new(
-            outer.x,
-            outer.y,
-            NonZeroU32::new(width).ok_or(IntErrorKind::PosOverflow)?,
-            NonZeroU32::new(height).ok_or(IntErrorKind::PosOverflow)?,
-        ))
+
+        let (x_end, y_end) = radius
+            .checked_mul(2)
+            .and_then(|r| Some((outer.x.end.checked_add(r)?, outer.y.end.checked_add(r)?)))
+            .ok_or(std::num::IntErrorKind::PosOverflow)?;
+
+        Ok(Roi {
+            x: NonZeroRange::new_unchecked(outer.x.start..x_end),
+            y: NonZeroRange::new_unchecked(outer.y.start..y_end),
+        })
     }
 
     #[inline]
@@ -349,7 +349,7 @@ pub struct DilateSpanIterAcc<I, T, S = DilateInPlace<T>> {
     next_input: Option<Span<T>>,
     offset: T,
     strategy: S,
-    bounds: Rect<u32>,
+    bounds: Roi<u32>,
     /// Exclusive end (absolute row) of the coverage: rows beyond can never gain coverage,
     /// so iteration stops before reaching it.
     cov_y_end: T,
@@ -391,9 +391,10 @@ where
     /// Creates an iterator dilating with the default [`DilateInPlace`] strategy, which
     /// clips input spans to the input bounds `iter` declares.
     pub fn new(iter: I, offset: T::NonZero) -> Result<Self, PipelineError> {
-        let bounds = iter.bounds();
-        let outer_x_end = u64::from(bounds.x) + u64::from(bounds.width.get());
-        let outer_x = try_coordinate::<T>(u64::from(bounds.x))?..try_coordinate::<T>(outer_x_end)?;
+        let bounds = iter.roi();
+        let outer_x_end = u64::from(bounds.x.end);
+        let outer_x =
+            try_coordinate::<T>(u64::from(bounds.x.start))?..try_coordinate::<T>(outer_x_end)?;
         Self::with_strategy(iter, offset, DilateInPlace::new(offset.into(), outer_x))
     }
 }
@@ -416,7 +417,7 @@ where
     u32: UncheckedCast<T>,
 {
     pub fn with_strategy(iter: I, offset: T::NonZero, strategy: S) -> Result<Self, PipelineError> {
-        let orig_bounds = iter.bounds();
+        let orig_bounds = iter.roi();
         let offset_val: T = offset.into();
         let off_u32: u32 = offset_val.cast_unchecked();
 
@@ -432,12 +433,12 @@ where
         // produces — coverage index or emitted span — stays within `bounds`: rejecting
         // bounds not representable in `T` rules out every overflow of the hot path.
         let bounds = strategy.compute_bounds(orig_bounds)?;
-        let bounds_x_end = u64::from(bounds.x) + u64::from(bounds.width.get());
-        let bounds_y_end = u64::from(bounds.y) + u64::from(bounds.height.get());
+        let bounds_x_end = u64::from(bounds.x.end);
+        let bounds_y_end = u64::from(bounds.y.end);
         try_coordinate::<T>(bounds_x_end)?;
         try_coordinate::<T>(bounds_y_end)?;
 
-        let cov_y_start = try_coordinate::<T>(u64::from(bounds.y))?;
+        let cov_y_start = try_coordinate::<T>(u64::from(bounds.y.start))?;
         let cov_y_end = try_coordinate::<T>(bounds_y_end)?;
         // Coverage is indexed by absolute `x`, so it also covers the padding left of
         // `bounds.x` (which `row_a` never scans).
@@ -633,21 +634,21 @@ where
 }
 
 impl<I, T, S> ImageDimension for DilateSpanIterAcc<I, T, S> {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.bounds.width
+        self.bounds.width()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::{NonZero, NonZeroU8, NonZeroU32};
+    use std::num::{NonZero, NonZeroU8};
 
     use crate::{
-        DilateSpanIterAcc, DilateTranslated, ImageDimension, ImaskSet, PipelineError, Rect,
+        DilateSpanIterAcc, DilateTranslated, ImageDimension, ImaskSet, PipelineError, Roi,
         SortedRanges, Span,
     };
 
@@ -656,11 +657,11 @@ mod tests {
 
     #[test]
     fn dilate_2x() {
-        let rect = Rect::new(50u32, 5, NonZero::new(2).unwrap(), NonZero::new(2).unwrap());
+        let rect = Roi::new(50u32..52, 5..7);
         let radius = NonZero::new(2u32).unwrap();
         let result: Vec<_> = rect
             .into_spans()
-            .dilate_within(radius, rect.expand(radius.get()))
+            .dilate_within(radius, rect.expand_saturating(radius.get()))
             .unwrap()
             .collect();
 
@@ -671,7 +672,7 @@ mod tests {
     #[test]
     fn dilate_1x_single_span() {
         let radius = NonZero::new(1u32).unwrap();
-        let roi = Rect::new(0, 0, W, H).expand(radius.get());
+        let roi = Roi::new(0..W.get(), 0..H.get()).expand_saturating(radius.get());
         let result: Vec<_> = vec![Span::new(5..10, 3u32)]
             .into_iter()
             .with_bounds(W, H)
@@ -692,7 +693,7 @@ mod tests {
     #[test]
     fn dilate_at_top_edge() {
         let radius = NonZero::new(1u32).unwrap();
-        let roi = Rect::new(0, 0, W, H).expand(radius.get());
+        let roi = Roi::new(0..W.get(), 0..H.get()).expand_saturating(radius.get());
         let result: Vec<_> = vec![Span::new(5..10, 0u32)]
             .into_iter()
             .with_bounds(W, H)
@@ -709,7 +710,7 @@ mod tests {
     #[test]
     fn dilate_multiple_spans_same_row() {
         let radius = NonZero::new(1u32).unwrap();
-        let roi = Rect::new(0, 0, W, H).expand(radius.get());
+        let roi = Roi::new(0..W.get(), 0..H.get()).expand_saturating(radius.get());
         let result: Vec<_> = vec![Span::new(0..3, 5u32), Span::new(7..10, 5u32)]
             .into_iter()
             .with_bounds(W, H)
@@ -735,7 +736,10 @@ mod tests {
         let result: Vec<_> = vec![Span::new(5..10, 5u32), Span::new(5..10, 6u32)]
             .into_iter()
             .with_bounds(W, H)
-            .dilate_within(NonZero::new(1u32).unwrap(), Rect::new(0, 0, W, H).expand(1))
+            .dilate_within(
+                NonZero::new(1u32).unwrap(),
+                Roi::new(0..W.get(), 0..H.get()).expand_saturating(1),
+            )
             .unwrap()
             .collect();
 
@@ -755,7 +759,10 @@ mod tests {
         let result: Vec<_> = vec![Span::new(5..10, 0u32), Span::new(5..10, 5u32)]
             .into_iter()
             .with_bounds(W, H)
-            .dilate_within(NonZero::new(3u32).unwrap(), Rect::new(0, 0, W, H).expand(3))
+            .dilate_within(
+                NonZero::new(3u32).unwrap(),
+                Roi::new(0..W.get(), 0..H.get()).expand_saturating(3),
+            )
             .unwrap()
             .collect();
 
@@ -767,19 +774,18 @@ mod tests {
 
     #[test]
     fn correct_bounds() {
-        const ELEVEN: NonZeroU32 = NonZeroU32::new(11).unwrap();
         const FIVE: NonZeroU8 = NonZeroU8::new(5).unwrap();
         let x = DilateSpanIterAcc::new(
             SortedRanges::from(Span::new(6u8..7, 7)).spans_owned::<u8>(),
             FIVE,
         )
         .unwrap();
-        assert_eq!(Rect::new(1, 2, ELEVEN, ELEVEN), x.bounds());
+        assert_eq!(Roi::new(1u32..12, 2..13), x.roi());
     }
 
     #[test]
     fn dilate_spans_entirely_outside_roi() {
-        let roi = Rect::new(4, 0, NonZero::new(3).unwrap(), NonZero::new(1).unwrap());
+        let roi = Roi::new(4u32..7, 0..1);
         let result: Vec<_> = vec![
             Span::new(0..1, 0u32),
             Span::new(5..6, 0u32),
@@ -796,7 +802,7 @@ mod tests {
 
     #[test]
     fn dilate_span_crossing_roi_edge_is_clipped_to_roi() {
-        let roi = Rect::new(4, 0, NonZero::new(3).unwrap(), NonZero::new(1).unwrap());
+        let roi = Roi::new(4u32..7, 0..1);
         let result: Vec<_> = vec![Span::new(3..8, 0u32)]
             .into_iter()
             .with_bounds(W, H)
@@ -809,7 +815,7 @@ mod tests {
 
     #[test]
     fn dilate_spans_outside_roi_rows() {
-        let roi = Rect::new(0, 4, NonZero::new(10).unwrap(), NonZero::new(2).unwrap());
+        let roi = Roi::new(0u32..10, 4..6);
         let result: Vec<_> = vec![
             Span::new(5..6, 0u32),
             Span::new(5..6, 4u32),
@@ -833,7 +839,7 @@ mod tests {
 
     #[test]
     fn dilate_within_disjoint_roi_is_empty() {
-        let roi = Rect::new(200, 200, NonZero::new(3).unwrap(), NonZero::new(1).unwrap());
+        let roi = Roi::new(200u32..203, 200..201);
         let result = vec![Span::new(0..1, 0u32)]
             .into_iter()
             .with_bounds(W, H)
@@ -852,10 +858,7 @@ mod tests {
             DilateTranslated::new(1),
         )
         .unwrap();
-        assert_eq!(
-            Rect::new(0, 0, NonZero::new(102).unwrap(), NonZero::new(102).unwrap()),
-            iter.bounds()
-        );
+        assert_eq!(Roi::new(0u32..102, 0..102), iter.roi());
 
         let result: Vec<_> = iter.collect();
         // DilateInPlace would emit 4..7 at rows 0,1 and 4..=6. Translated shifts x and y
@@ -878,7 +881,7 @@ mod tests {
     fn dilate_translated_requires_y_space() {
         // 250 + 5 + 2 * radius = 257 doesn't fit u8: compute_bounds/with_strategy must
         // reject it, mirroring the x check.
-        let roi = Rect::new(0, 250, NonZero::new(10).unwrap(), NonZero::new(5).unwrap());
+        let roi = Roi::new(0u32..10, 250..255);
         let result = DilateSpanIterAcc::with_strategy(
             vec![Span::new(0u8..1, 250u8)].into_iter().with_roi(roi),
             NonZero::new(1u8).unwrap(),
@@ -896,7 +899,7 @@ mod tests {
         // Both implementations require the input to be sorted by (y, x). The accumulator
         // uses the in-place strategy and must see the same extended input bounds that
         // `dilate` declares via `source.bounds().expand(radius)`.
-        let roi = Rect::new(0, 0, w_nz, h_nz).expand(offset.get());
+        let roi = Roi::new(0..w, 0..h).expand_saturating(offset.get());
         let dilate = spans
             .iter()
             .copied()
@@ -908,7 +911,7 @@ mod tests {
             offset,
         )
         .unwrap();
-        assert_eq!(dilate.bounds(), dilate_acc.bounds());
+        assert_eq!(dilate.roi(), dilate_acc.roi());
         let acc = SortedRanges::<u64>::try_from_span_iter(dilate_acc)
             .expect("Ranges are valid to be collected into SortedRanges")
             .spans_owned::<u32>()

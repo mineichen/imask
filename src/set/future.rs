@@ -74,7 +74,7 @@ where
                 }
                 Some(Err(e)) => return Ready(Err(e)),
                 None => {
-                    let bounds = this.stream.bounds();
+                    let bounds = this.stream.roi();
                     return Ready(Ok(this.builder.take().unwrap().build(bounds)));
                 }
             }

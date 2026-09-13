@@ -67,7 +67,7 @@ where
         self.iter.width()
     }
 
-    fn bounds(&self) -> crate::Rect<u32> {
-        self.iter.bounds()
+    fn roi(&self) -> crate::Roi<u32> {
+        self.iter.roi()
     }
 }

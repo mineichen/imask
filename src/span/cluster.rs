@@ -8,7 +8,7 @@ use std::{
 
 use num_traits::One;
 
-use crate::{ImageDimension, Rect, Span, UncheckedCast};
+use crate::{ImageDimension, NonZeroRange, Roi, Span, UncheckedCast};
 
 /// Iterator-combinator that groups neighbouring [`Span`]s into [`SpanCluster`]s.
 ///
@@ -52,8 +52,8 @@ impl<I, T> ImageDimension for ClusterSpanIter<I, T>
 where
     I: ImageDimension,
 {
-    fn bounds(&self) -> Rect<u32> {
-        self.parent.bounds()
+    fn roi(&self) -> Roi<u32> {
+        self.parent.roi()
     }
     fn width(&self) -> NonZero<u32> {
         self.parent.width()
@@ -122,7 +122,7 @@ where
 #[derive(Clone)]
 pub struct SpanCluster<T> {
     spans: std::vec::IntoIter<Span<T>>,
-    bounds: Rect<u32>,
+    bounds: Roi<u32>,
 }
 
 impl<T> Iterator for SpanCluster<T> {
@@ -136,11 +136,11 @@ impl<T> Iterator for SpanCluster<T> {
 }
 
 impl<T> ImageDimension for SpanCluster<T> {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         self.bounds
     }
     fn width(&self) -> NonZero<u32> {
-        self.bounds.width
+        self.bounds.width()
     }
 }
 
@@ -302,13 +302,14 @@ where
         let max_y = self.spans.last().expect("never empty").y;
         let x = self.min_x.cast_unchecked();
         let y = self.min_y.cast_unchecked();
-        let width = NonZero::new(self.max_x.cast_unchecked() - x)
-            .expect("non-empty cluster has positive width");
-        let height = NonZero::new(max_y.cast_unchecked() + 1 - y)
-            .expect("non-empty cluster has positive height");
+        let x_end = self.max_x.cast_unchecked();
+        let y_end = max_y.cast_unchecked() + 1;
         SpanCluster {
             spans: self.spans.into_iter(),
-            bounds: Rect::new(x, y, width, height),
+            bounds: Roi {
+                x: NonZeroRange::new_unchecked(x..x_end),
+                y: NonZeroRange::new_unchecked(y..y_end),
+            },
         }
     }
 }
@@ -317,7 +318,7 @@ where
 mod tests {
     use std::num::NonZero;
 
-    use crate::{ImageDimension, ImaskSet, Rect, Span};
+    use crate::{ImageDimension, ImaskSet, Roi, Span};
 
     use super::super::ascii_bitmap::AsciiBitmap;
     use super::*;
@@ -329,7 +330,6 @@ mod tests {
     ) -> Vec<Vec<Span<u32>>> {
         let mut groups: Vec<Vec<Span<u32>>> = Vec::new();
         for cluster in iter {
-            let _ = cluster.bounds();
             groups.push(cluster.collect());
         }
         groups.sort_by(|a, b| {
@@ -478,11 +478,8 @@ mod tests {
         );
         let mut iter = bitmap.iter::<u32>().cluster();
         let cluster = iter.next().unwrap();
-        let bounds = ImageDimension::bounds(&cluster);
-        assert_eq!(
-            bounds,
-            Rect::new(1, 2, NonZero::new(3).unwrap(), NonZero::new(2).unwrap())
-        );
+        let bounds = ImageDimension::roi(&cluster);
+        assert_eq!(bounds, Roi::new(1..4, 2..4));
         assert_eq!(ImageDimension::width(&cluster), NonZero::new(3).unwrap());
     }
 

@@ -14,7 +14,7 @@ impl<T> SortedRanges<T> {
     /// Returns Some(SortedRanges) if non-empty, None if empty.
     /// ```
     /// use std::ops::RangeInclusive;
-    /// use imask::{Rect, SortedRanges, SourceIterator, ImaskSet, ImageDimension};
+    /// use imask::{Roi, SortedRanges, SourceIterator, ImaskSet, ImageDimension};
     /// use std::num::NonZero;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,7 +22,7 @@ impl<T> SortedRanges<T> {
     /// let source = [10u32..20, 30..45, 50..60].with_bounds(size, size);
     /// let ranges = SortedRanges::<u16>::try_from_ordered_iter(source)?;
     /// let ranges = ranges.map_inplace(|iter| {
-    ///     let roi = iter.bounds();
+    ///     let roi = iter.roi();
     ///     iter.map(|x| {
     ///         let (start, end) = x.into_inner();
     ///         (start+5)..=(end + 5)
@@ -54,7 +54,7 @@ impl<T> SortedRanges<T> {
         };
 
         let items = f(source);
-        let new_bounds = items.bounds();
+        let new_bounds = items.roi();
         let offsets_iter = RangeToOffsetsIter::<_, T, T>::new(items);
         let mut cache: VecDeque<(T, T)> = VecDeque::new();
         let mut write_pos = 0;
@@ -114,31 +114,28 @@ impl<T> SortedRanges<T> {
     ///
     /// ```
     /// use std::num::NonZero;
-    /// use imask::{
-    ///     ImageDimension, ImaskSet, Rect, SortedRanges, SortedRangesSpanIter, Span,
-    ///     NonZeroRange,
-    /// };
+    /// use imask::{ImageDimension, ImaskSet, SortedRanges, SortedRangesSpanIter, Span};
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let width = NonZero::new(100u32).unwrap();
     /// let height = NonZero::new(200u32).unwrap();
     /// // Two rows, each full width
     /// let spans = [
-    ///     Span::new(0..100, 0u64),
-    ///     Span::new(50..100, 1u64),
+    ///     Span::new(0..100, 0u32),
+    ///     Span::new(50..100, 1u32),
     /// ].with_bounds(width, height);
-    /// let ranges = SortedRanges::<u32>::try_from_span_iter(spans)?;
+    /// let ranges = SortedRanges::<u64>::try_from_span_iter(spans)?;
     ///
     /// let result = ranges.map_span_inplace(|source| {
-    ///     let extra = SortedRanges::from(Span::new(0..50, 1u64)).spans_owned();
+    ///     let extra = SortedRanges::from(Span::new(0..50, 1u32)).spans_owned();
     ///     source.union(extra)
     /// }).expect("Non-empty");
     ///
     /// assert_eq!(1, result.len());
-    /// let out_spans: Vec<_> = result.spans::<u64>().collect();
+    /// let out_spans: Vec<_> = result.spans::<u32>().collect();
     /// assert_eq!(out_spans, vec![
-    ///     Span::new(0..100, 0u64),
-    ///     Span::new(0..100, 1u64),
+    ///     Span::new(0..100, 0u32),
+    ///     Span::new(0..100, 1u32),
     /// ]);
     /// # Ok(())
     /// # }
@@ -160,20 +157,15 @@ impl<T> SortedRanges<T> {
 
         let source_spans = SortedRangesSpanIter::new(source);
         let items = f(source_spans);
-        let new_bounds = items.bounds();
-        let width = new_bounds.width.get();
-        let offset_x = new_bounds.x as u64;
-        let offset_y = new_bounds.y as u64;
+        let new_bounds = items.roi();
+        let width = new_bounds.width().get();
+        let offset_x = new_bounds.x.start as u64;
+        let offset_y = new_bounds.y.start as u64;
         // The closure works with global spans (containing bounds offset).
         // Convert them to local spans for writing back.
-        let items = items.map(move |span| {
-            Span::new(
-                NonZeroRange::new_debug_checked_zeroable(
-                    span.x.start - offset_x,
-                    span.x.end - offset_x,
-                ),
-                span.y - offset_y,
-            )
+        let items = items.map(move |span| Span {
+            x: NonZeroRange::new_unchecked(span.x.start - offset_x..span.x.end - offset_x),
+            y: span.y - offset_y,
         });
         let offsets_iter = SpanToOffsetsIter::<_, T, T>::new(items, width);
         let mut cache: VecDeque<(T, T)> = VecDeque::new();
@@ -234,10 +226,10 @@ impl<T> FusedIterator for SourceIterator<T> where Self: Iterator {}
 
 impl<T> ImageDimension for SourceIterator<T> {
     fn width(&self) -> NonZero<u32> {
-        self.cell.borrow().0.bounds.width
+        self.cell.borrow().0.bounds.width()
     }
 
-    fn bounds(&self) -> crate::Rect<u32> {
+    fn roi(&self) -> crate::Roi<u32> {
         self.cell.borrow().0.bounds
     }
 }
@@ -277,7 +269,7 @@ where
 mod tests {
     use std::{num::NonZero, ops::Range};
 
-    use crate::{ImageDimension, ImaskSet, Rect, SortedRanges, Span};
+    use crate::{ImageDimension, ImaskSet, Roi, SortedRanges, Span};
 
     #[test]
     fn full_width_multiline_mask_union() {
@@ -289,7 +281,7 @@ mod tests {
 
         let result = ranges
             .map_span_inplace(|source| {
-                let extra = SortedRanges::from(Span::new(0..50, 2u64)).spans_owned();
+                let extra = SortedRanges::from(Span::new(0u32..50, 2)).spans_owned();
                 source.union(extra)
             })
             .expect("Non-empty");
@@ -308,12 +300,7 @@ mod tests {
 
     #[test]
     fn subtract_with_bounds_offset() {
-        let roi = Rect::new(
-            1u32,
-            2,
-            NonZero::new(100u32).unwrap(),
-            NonZero::new(200u32).unwrap(),
-        );
+        let roi = Roi::new(1u32..101, 2u32..202);
         // Two rows, each full width, globally offset by (1, 2)
         let global_spans: Vec<Span<u64>> = vec![
             Span::new(1u64..101, 2u64),
@@ -325,13 +312,13 @@ mod tests {
         let ranges =
             SortedRanges::<u32>::try_from_span_iter(global_spans.clone().with_roi(roi)).unwrap();
 
-        assert_eq!(roi, ranges.bounds());
+        assert_eq!(roi, ranges.roi());
 
         // Remove the entire second row (global y=3)
         let result = ranges
             .map_span_inplace(|source| {
                 // Verify source spans are global (with bounds offset applied)
-                let bounds = source.bounds();
+                let bounds = source.roi();
                 let verified = source.inspect(|s| {
                     assert_eq!(Range::from(s.x), 1..101, "global x.start should be 1");
                     assert!(s.y >= 2, "global y should be >= 2 for bounds.y = 2");
@@ -341,7 +328,7 @@ mod tests {
             })
             .expect("Non-empty");
 
-        assert_eq!(roi, result.bounds());
+        assert_eq!(roi, result.roi());
         assert_eq!(2, result.len());
         let out_spans: Vec<Span<u64>> = result.spans::<u64>().collect();
         assert_eq!(
@@ -365,7 +352,7 @@ mod tests {
         // Remove half of the second row
         let result = ranges
             .map_span_inplace(|source| {
-                let remove = SortedRanges::from(Span::new(0u64..50, 1)).spans_owned();
+                let remove = SortedRanges::from(Span::new(0u32..50, 1)).spans_owned();
                 source.subtract(remove)
             })
             .expect("Non-empty");
@@ -395,13 +382,16 @@ mod tests {
 
     #[test]
     fn map_span_inplace_bounds_update() {
-        let source_span = Span::new(10u64..100, 30);
+        let source_span = Span::new(10u32..100, 30);
         let ranges = SortedRanges::from(source_span);
 
-        let mapped = Span::new(9u64..101, 40);
+        let mapped = Span::new(9u32..101, 40);
         let result = ranges
             .map_span_inplace(|source| {
-                assert_eq!(vec![source_span], source.collect::<Vec<_>>());
+                assert_eq!(
+                    vec![Span::<u64>::from(source_span)],
+                    source.collect::<Vec<_>>()
+                );
                 SortedRanges::from(mapped).spans_owned()
             })
             .unwrap()
@@ -416,7 +406,7 @@ mod tests {
     }
     #[test]
     fn map_inplace_bounds_update() {
-        let source_span = Span::new(10u32..100, 30);
+        let source_span = Span::new(10u16..100, 30);
         let ranges = SortedRanges::from(source_span);
 
         let mapped = Span::new(9u32..101, 40);
@@ -442,19 +432,9 @@ mod tests {
 
     #[test]
     fn map_span_inplace_can_return_other_dimensions() {
-        let base = Rect::new(
-            0u32,
-            0,
-            NonZero::new(100).unwrap(),
-            NonZero::new(100).unwrap(),
-        );
+        let base = Roi::new(0u32..100, 0u32..100);
         let ranges = SortedRanges::<u32>::try_from_span_iter(base.into_spans()).unwrap();
-        let expected = Rect::new(
-            50,
-            50,
-            NonZero::new(200).unwrap(),
-            NonZero::new(100).unwrap(),
-        );
+        let expected = Roi::new(50u64..250, 50u64..150);
         let ranges = ranges
             .map_span_inplace(|_source| expected.into_spans())
             .expect("Should be non-empty");

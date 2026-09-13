@@ -5,7 +5,7 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
-use crate::{CreateRange, ImageDimension, Rect, SignedNonZeroable, UncheckedCast};
+use crate::{CreateRange, ImageDimension, NonZeroRange, SignedNonZeroable, UncheckedCast};
 
 pub struct SortedRangesIterGlobal<I, E, T: CreateRange> {
     included: I,
@@ -61,12 +61,10 @@ impl<I, E, T: CreateRange> ImageDimension for SortedRangesIterGlobal<I, E, T> {
         self.new_width
     }
 
-    fn bounds(&self) -> crate::Rect<u32> {
-        Rect {
-            x: 0,
-            y: 0,
-            width: self.new_width,
-            height: self.new_height,
+    fn roi(&self) -> crate::Roi<u32> {
+        crate::Roi {
+            x: NonZeroRange::from_dimension(self.new_width),
+            y: NonZeroRange::from_dimension(self.new_height),
         }
     }
 }

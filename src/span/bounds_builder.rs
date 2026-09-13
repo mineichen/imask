@@ -2,7 +2,7 @@ use std::ops::{Add, Sub};
 
 use num_traits::{Bounded, One};
 
-use crate::{PipelineEmptyError, Rect, SignedNonZeroable, Span};
+use crate::{NonZeroRange, PipelineEmptyError, Roi, SignedNonZeroable, Span};
 
 /// Aggregates `min/max` `x`/`y` over [`Span`]s without any `Option` in the
 /// hot path.
@@ -74,9 +74,9 @@ impl<T: Copy + Ord + Bounded> SpanBoundsBuilder<T> {
     /// no span was added.
     ///
     /// `width = max_x_end - min_x`, `height = max_y - min_y + 1`.
-    pub fn build(self) -> Result<Rect<T>, PipelineEmptyError>
+    pub fn build(self) -> Result<Roi<T>, PipelineEmptyError>
     where
-        T: SignedNonZeroable + Sub<Output = T> + Add<Output = T> + One,
+        T: SignedNonZeroable + Copy + Sub<Output = T> + Add<Output = T> + One,
     {
         if self.max_y < self.min_y {
             return Err(PipelineEmptyError);
@@ -86,7 +86,10 @@ impl<T: Copy + Ord + Bounded> SpanBoundsBuilder<T> {
             .expect("non-empty spans imply non-zero width");
         let height = T::create_non_zero((self.max_y - self.min_y) + T::one())
             .expect("non-empty spans imply non-zero height");
-        Ok(Rect::new(self.min_x, self.min_y, width, height))
+        Ok(Roi {
+            x: NonZeroRange::from_span(self.min_x, width),
+            y: NonZeroRange::from_span(self.min_y, height),
+        })
     }
 }
 
@@ -110,7 +113,6 @@ impl<T: Copy + Ord + Bounded> FromIterator<Span<T>> for SpanBoundsBuilder<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::num::{NonZero, NonZeroU32};
 
     use super::*;
 
@@ -127,7 +129,7 @@ mod tests {
         let mut builder = SpanBoundsBuilder::<u32>::default();
         let span = Span::new(10u32..20, 2u32);
         builder.add(span);
-        let expected: Rect<u32> = span.into();
+        let expected: Roi<u32> = span.into();
         assert_eq!(builder.build(), Ok(expected));
     }
 
@@ -137,7 +139,7 @@ mod tests {
         builder.add(Span::new(10u32..20, 5u32));
         builder.add(Span::new(2u32..8, 1u32));
         builder.add(Span::new(4u32..30, 9u32));
-        let expected = Rect::new(2u32, 1, NonZero::new(28).unwrap(), NonZero::new(9).unwrap());
+        let expected = Roi::new(2u32..30, 1..10);
         assert_eq!(builder.build(), Ok(expected));
     }
 
@@ -148,7 +150,7 @@ mod tests {
         let mut b = SpanBoundsBuilder::<u32>::default();
         b.add(Span::new(2u32..8, 1u32));
         a.merge(b);
-        let expected = Rect::new(2u32, 1, NonZero::new(18).unwrap(), NonZero::new(5).unwrap());
+        let expected = Roi::new(2u32..20, 1..6);
         assert_eq!(a.build(), Ok(expected));
 
         let mut empty = SpanBoundsBuilder::<u32>::default();
@@ -160,7 +162,7 @@ mod tests {
     fn from_iterator_and_extend() {
         let spans = vec![Span::new(2u32..5, 1u32), Span::new(2u32..5, 2u32)];
         let builder: SpanBoundsBuilder<u32> = spans.clone().into_iter().collect();
-        let expected = Rect::new(2u32, 1, NonZero::new(3).unwrap(), NonZero::new(2).unwrap());
+        let expected = Roi::new(2u32..5, 1..3);
         assert_eq!(builder.build(), Ok(expected));
 
         let mut builder = SpanBoundsBuilder::<u32>::default();
@@ -172,7 +174,7 @@ mod tests {
     fn single_pixel() {
         let mut builder = SpanBoundsBuilder::<u32>::default();
         builder.add(Span::new(5u32..6, 7u32));
-        let expected = Rect::new(5u32, 7, NonZeroU32::MIN, NonZeroU32::MIN);
+        let expected = Roi::new(5u32..6, 7..8);
         assert_eq!(builder.build(), Ok(expected));
     }
 

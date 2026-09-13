@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Sub};
 
-use crate::{CreateRange, ImageDimension, Rect, SignedNonZeroable, Span};
+use crate::{CreateRange, ImageDimension, Roi, SignedNonZeroable, Span};
 
 pub struct SpanIntoRangesIter<TIter: Iterator, TOut: CreateRange<Item: SignedNonZeroable>> {
     parent: TIter,
-    bounds: Rect<TOut::Item>,
+    bounds: Roi<TOut::Item>,
     static_offset: TOut::Item,
     unreleased: Option<TOut>,
 }
@@ -13,8 +13,8 @@ pub struct SpanIntoRangesIter<TIter: Iterator, TOut: CreateRange<Item: SignedNon
 impl<TIter: Iterator + ImageDimension, TOut: CreateRange<Item: SignedNonZeroable>> ImageDimension
     for SpanIntoRangesIter<TIter, TOut>
 {
-    fn bounds(&self) -> crate::Rect<u32> {
-        self.parent.bounds()
+    fn roi(&self) -> crate::Roi<u32> {
+        self.parent.roi()
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
@@ -25,11 +25,11 @@ impl<TIter: Iterator + ImageDimension, TOut: CreateRange<Item: SignedNonZeroable
 impl<TIter: Iterator + ImageDimension, TOut: CreateRange<Item: SignedNonZeroable>>
     SpanIntoRangesIter<TIter, TOut>
 where
-    TOut::Item: TryFrom<u32, Error: Debug>,
+    TOut::Item: TryFrom<u32, Error: Debug> + Ord + Debug,
 {
     pub(crate) fn new(parent: TIter) -> Self {
-        let bounds = parent.bounds();
-        let static_offset = (bounds.x + bounds.y * bounds.width.get())
+        let bounds = parent.roi();
+        let static_offset = (bounds.x.start + bounds.y.start * bounds.width().get())
             .try_into()
             .expect("Cant calculate static offset");
         let bounds = bounds.try_cast::<TOut::Item>().unwrap();
@@ -62,7 +62,7 @@ impl<
             let Some(next) = self.parent.next() else {
                 return self.unreleased.take();
             };
-            let offset = next.y * self.bounds.width.into();
+            let offset = next.y * self.bounds.width().into();
             let start = offset + next.x.start - self.static_offset;
             let end = offset + next.x.end - self.static_offset;
             if let Some(unrel) = &mut self.unreleased {
@@ -98,20 +98,17 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
     use std::ops::Range;
 
     use super::*;
-    use crate::{ImaskSet, Rect};
-
-    const NON_ZERO_10: NonZeroU32 = NonZeroU32::new(10).unwrap();
+    use crate::{ImaskSet, Roi};
 
     #[test]
     fn summarize_multiline() {
-        let rect = Rect::new(10u32, 10, NON_ZERO_10, NON_ZERO_10);
+        let rect = Roi::new(10u32..20, 10..20);
 
         let via_span = rect.into_spans().into_ranges::<Range<u32>>();
-        assert_eq!(rect, via_span.bounds());
+        assert_eq!(rect, via_span.roi());
         let via_span = via_span.collect::<Vec<_>>();
         assert_eq!(vec![0..100], via_span);
     }

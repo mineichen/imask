@@ -2,7 +2,7 @@ use std::io::{self, Read, Write};
 use std::num::NonZero;
 
 use super::{HEADER_SIZE, IntoRangeResult, U64_SIZE, read_u64, unexpected_eof, write_u64};
-use crate::{CreateRange, ImageDimension, SortedRanges};
+use crate::{CreateRange, ImageDimension, Roi, SortedRanges};
 
 // reader.read_exact doesn't provide info, if anything was read
 fn read_exact_or_nothing<R: Read>(reader: &mut R, buf: &mut [u8]) -> io::Result<bool> {
@@ -39,13 +39,7 @@ where
     I::Item: IntoRangeResult,
 {
     pub fn write(mut self) -> io::Result<()> {
-        let roi = self.iter.bounds();
-        let roi = super::roi::Roi {
-            offset_x: roi.x,
-            offset_y: roi.y,
-            width: roi.width,
-            height: roi.height,
-        };
+        let roi = self.iter.roi();
         let header = super::header::Header::new(
             super::header::DataType::U64,
             super::header::DataType::U64,
@@ -88,23 +82,18 @@ where
 
 pub struct ReaderRangeIterator<R, TRange> {
     reader: R,
-    roi: super::roi::Roi,
+    roi: Roi<u32>,
     last_end: u64,
     _phantom: std::marker::PhantomData<TRange>,
 }
 
 impl<R, TRange> ImageDimension for ReaderRangeIterator<R, TRange> {
-    fn bounds(&self) -> crate::Rect<u32> {
-        crate::Rect {
-            x: self.roi.offset_x,
-            y: self.roi.offset_y,
-            width: self.roi.width,
-            height: self.roi.height,
-        }
+    fn roi(&self) -> crate::Roi<u32> {
+        self.roi
     }
 
     fn width(&self) -> NonZero<u32> {
-        self.roi.width
+        self.roi.width()
     }
 }
 
@@ -159,12 +148,7 @@ impl<T> SortedRanges<T> {
             return Err(unexpected_eof());
         };
         let header = super::header::Header::from_bytes(header_bytes)?;
-        let bounds = crate::Rect {
-            x: header.roi.offset_x,
-            y: header.roi.offset_y,
-            width: header.roi.width,
-            height: header.roi.height,
-        };
+        let bounds = header.roi;
 
         let mut all_included = Vec::new();
         let all_excluded = input[HEADER_SIZE..]
@@ -200,27 +184,24 @@ mod tests {
 
     use crate::io::PROTOCOL_VERSION;
     use crate::set::ImaskSet;
-    use crate::{NonZeroRange, Rect, WithRoi};
+    use crate::{NonZeroRange, Roi, WithRoi};
 
     use super::*;
 
-    const NONZERO_1000: NonZeroU32 = NonZeroU32::new(1000).unwrap();
-    const ROI: Rect<u32> = Rect::new(0, 0, NONZERO_1000, NONZERO_1000);
+    const ROI: Roi<u32> = Roi {
+        x: NonZeroRange::<u32>::new_const(0..1000),
+        y: NonZeroRange::<u32>::new_const(0..1000),
+    };
 
     fn with_roi<I: IntoIterator>(inner: I) -> WithRoi<I::IntoIter> {
         WithRoi::new(inner.into_iter(), ROI)
     }
 
-    fn make_header_bytes(
-        offset_x: u32,
-        offset_y: u32,
-        width: NonZeroU32,
-        height: NonZeroU32,
-    ) -> Vec<u8> {
+    fn make_header_bytes(roi: Roi<u32>) -> Vec<u8> {
         super::super::header::Header::new(
             super::super::header::DataType::U64,
             super::super::header::DataType::U64,
-            super::super::roi::Roi::new(offset_x, offset_y, width, height),
+            roi,
         )
         .to_bytes()
         .to_vec()
@@ -273,7 +254,7 @@ mod tests {
 
     #[test]
     fn header_only_is_empty() {
-        let buf = make_header_bytes(0, 0, NonZeroU32::MIN, NonZeroU32::MIN);
+        let buf = make_header_bytes(Roi::new(0..1, 0..1));
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]).unwrap();
         let result: Vec<_> = reader.collect::<io::Result<Vec<_>>>().unwrap();
         assert!(result.is_empty());
@@ -355,7 +336,7 @@ mod tests {
 
     #[test]
     fn truncated_range_partial_gap() {
-        let mut buf = make_header_bytes(0, 0, NonZeroU32::MIN, NonZeroU32::MIN);
+        let mut buf = make_header_bytes(Roi::new(0..1, 0..1));
         buf.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]).unwrap();
         let result = reader.collect::<io::Result<Vec<_>>>();
@@ -364,7 +345,7 @@ mod tests {
 
     #[test]
     fn truncated_range_gap_complete_len_partial() {
-        let mut buf = make_header_bytes(0, 0, NonZeroU32::MIN, NonZeroU32::MIN);
+        let mut buf = make_header_bytes(Roi::new(0..1, 0..1));
         buf.extend_from_slice(&make_range_bytes(10, 100)[..12]);
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]).unwrap();
         let result = reader.collect::<io::Result<Vec<_>>>();
@@ -384,7 +365,7 @@ mod tests {
 
     #[test]
     fn len_zero_terminates_stream() {
-        let mut buf = make_header_bytes(0, 0, NONZERO_1000, NONZERO_1000);
+        let mut buf = make_header_bytes(ROI);
         buf.extend_from_slice(&make_range_bytes(10, 100));
         buf.extend_from_slice(&make_range_bytes(5, 0));
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]).unwrap();
@@ -436,7 +417,10 @@ mod tests {
         let height = NonZeroU32::new(3).unwrap();
         let content_width = width.get() - offset_x;
 
-        let roi = Rect::new(offset_x, offset_y, width, height);
+        let roi = Roi::new(
+            offset_x..offset_x + width.get(),
+            offset_y..offset_y + height.get(),
+        );
 
         let local_ranges: Vec<RangeInclusive<u64>> = (0u64..height.get() as u64)
             .map(|i| {
@@ -459,8 +443,7 @@ mod tests {
         writer.write().unwrap();
 
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]).unwrap();
-        let reader_roi = reader.bounds();
-        assert_eq!(roi, reader_roi);
+        assert_eq!(roi, reader.roi());
 
         let result: Vec<_> = reader.collect::<io::Result<Vec<_>>>().unwrap();
         let expected: Vec<_> = local_ranges
@@ -474,14 +457,12 @@ mod tests {
     fn reader_roi_forwarded_to_writer() {
         use crate::SortedRanges;
 
-        let bounds = Rect::new(0u32, 0, NONZERO_1000, NONZERO_1000);
         let sorted = SortedRanges::<u64>::try_from_ordered_iter(
-            [10u64..20, 30..40, 1050..1060].with_roi(bounds),
+            [10u64..20, 30..40, 1050..1060].with_roi(ROI),
         )
         .unwrap();
         let expected: Vec<_> = sorted.iter_roi::<NonZeroRange<u64>>().collect();
 
-        let roi = Rect::new(0, 0, NONZERO_1000, NONZERO_1000);
         let phase1_buf = {
             let mut buf = Vec::new();
             SyncRangeWriter::new(&mut buf, with_roi(sorted.iter_roi::<NonZeroRange<u64>>()))
@@ -491,8 +472,7 @@ mod tests {
         };
 
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&phase1_buf[..]).unwrap();
-        let reader_roi = reader.bounds();
-        assert_eq!(roi, reader_roi);
+        assert_eq!(ROI, reader.roi());
 
         let mut phase2_buf = Vec::new();
         SyncRangeWriter::new(&mut phase2_buf, reader)
@@ -519,11 +499,7 @@ mod tests {
 
     #[test]
     fn from_serialized_roundtrip_with_offset() {
-        let offset_x = 1u32;
-        let offset_y = 2u32;
-        let width = NonZeroU32::new(100).unwrap();
-        let height = NonZeroU32::new(200).unwrap();
-        let roi = Rect::new(offset_x, offset_y, width, height);
+        let roi = Roi::new(1..101, 2..202);
 
         let local_ranges: Vec<Range<u64>> = vec![10u64..30, 45..50, 205..210];
         let original =
@@ -541,11 +517,7 @@ mod tests {
 
     #[test]
     fn reader_to_sorted_ranges_roundtrip_with_offset() -> TestResult {
-        let offset_x = 1u32;
-        let offset_y = 2u32;
-        let width = NonZeroU32::new(100).unwrap();
-        let height = NonZeroU32::new(200).unwrap();
-        let roi = Rect::new(offset_x, offset_y, width, height);
+        let roi = Roi::new(1..101, 2..202);
 
         let local_ranges: Vec<Range<u64>> = vec![10u64..30, 45..50, 205..210];
         let local_ranges_roi = local_ranges.clone().with_roi(roi);
@@ -555,7 +527,7 @@ mod tests {
         SyncRangeWriter::new(&mut buf, original.iter_roi::<Range<u64>>()).write()?;
 
         let reader = ReaderRangeIterator::<_, Range<u64>>::try_new(&buf[..])?;
-        assert_eq!(reader.bounds(), roi);
+        assert_eq!(reader.roi(), roi);
         let reader_ranges: Vec<_> = reader.collect::<io::Result<Vec<_>>>()?;
         let via_reader = SortedRanges::<u64>::try_from_ordered_iter(reader_ranges.with_roi(roi))?;
         assert_eq!(via_reader, original);

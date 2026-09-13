@@ -1,25 +1,28 @@
 use std::{iter::FusedIterator, num::NonZero};
 
-use crate::{ImageDimension, Rect};
+use crate::{ImageDimension, Roi};
 
 #[cfg(feature = "async-io")]
 pin_project_lite::pin_project! {
     #[derive(Clone, Debug)]
     pub struct WithRoi<I> {
         #[pin] inner: I,
-        roi: Rect<u32>,
+        roi: Roi<u32>,
     }
 }
 #[cfg(not(feature = "async-io"))]
 #[derive(Clone, Debug)]
 pub struct WithRoi<I> {
     inner: I,
-    roi: Rect<u32>,
+    roi: Roi<u32>,
 }
 
 impl<I> WithRoi<I> {
-    pub fn new(inner: I, roi: Rect<u32>) -> Self {
-        Self { inner, roi }
+    pub fn new(inner: I, roi: impl Into<Roi<u32>>) -> Self {
+        Self {
+            inner,
+            roi: roi.into(),
+        }
     }
 
     pub fn into_inner(self) -> I {
@@ -55,11 +58,11 @@ impl<I: futures_core::Stream> futures_core::Stream for WithRoi<I> {
 impl<I: FusedIterator> FusedIterator for WithRoi<I> {}
 
 impl<I> ImageDimension for WithRoi<I> {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         self.roi
     }
     fn width(&self) -> NonZero<u32> {
-        self.roi.width
+        self.roi.width()
     }
 }
 

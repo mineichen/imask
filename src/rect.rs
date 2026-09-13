@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::{
     fmt::Debug,
     num::NonZeroU32,
@@ -8,6 +10,7 @@ use crate::{CreateRange, NonZeroRange, RectIterator, SignedNonZeroable, Unchecke
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive))]
+#[deprecated(note = "Use Roi instead")]
 pub struct Rect<T: SignedNonZeroable> {
     pub x: T,
     pub y: T,
@@ -39,6 +42,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         }
     }
 
+    #[deprecated = "Only for migration away from Rect; use Roi::try_cast instead"]
     pub fn cast_unchecked<TNew: SignedNonZeroable>(self) -> Rect<TNew>
     where
         T: UncheckedCast<TNew>,
@@ -66,6 +70,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         }
     }
 
+    #[deprecated = "Only for migration away from Rect; use Roi.y.end instead"]
     pub fn len_y(&self) -> T::NonZero
     where
         T: Add<Output = T> + Copy,
@@ -73,6 +78,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         T::create_non_zero(self.y + self.height.into()).expect("Only fails, if addition overflows")
     }
     /// Offset.x + width
+    #[deprecated = "Only for migration away from Rect; use Roi.x.end instead"]
     pub fn len_x(&self) -> T::NonZero
     where
         T: Add<Output = T> + Copy,
@@ -80,7 +86,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         T::create_non_zero(self.x + self.width.into()).expect("Only fails, if addition overflows")
     }
 
-    #[expect(deprecated)]
+    #[deprecated = "Only for migration away from Rect; use Roi::union instead"]
     pub fn union(&self, other: &Self) -> Self
     where
         T: Copy + Ord + Add<Output = T> + Sub<Output = T>,
@@ -106,6 +112,7 @@ impl<T: SignedNonZeroable> Rect<T> {
 
     /// Largest rect contained in `self` and `other`, or `None` if they don't overlap
     /// (touching edges don't overlap).
+    #[deprecated = "Only for migration away from Rect; use Roi::intersection instead"]
     pub fn intersection(&self, other: &Self) -> Option<Self>
     where
         T: Copy + Ord + Add<Output = T> + Sub<Output = T>,
@@ -125,6 +132,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         })
     }
 
+    #[deprecated = "Only for migration away from Rect; use Roi::range_y instead"]
     pub fn range_y(&self) -> NonZeroRange<T>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
@@ -132,6 +140,7 @@ impl<T: SignedNonZeroable> Rect<T> {
     {
         NonZeroRange::new_debug_checked(self.y, self.height)
     }
+    #[deprecated = "Only for migration away from Rect; use Roi::range_x instead"]
     pub fn range_x(&self) -> NonZeroRange<T>
     where
         NonZeroRange<T>: CreateRange<Item = T>,
@@ -140,6 +149,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         NonZeroRange::new_debug_checked(self.x, self.width)
     }
 
+    #[deprecated = "Only for migration away from Rect; use Roi::contains instead"]
     pub fn contains(&self, x: &T, y: &T) -> bool
     where
         NonZeroRange<T>: CreateRange<Item = T>,
@@ -148,6 +158,7 @@ impl<T: SignedNonZeroable> Rect<T> {
         self.range_x().contains(x) && self.range_y().contains(y)
     }
 
+    #[deprecated = "Only for migration away from Rect; use Roi::try_cast instead"]
     pub fn try_cast<TNew: SignedNonZeroable + TryFrom<T>>(self) -> Result<Rect<TNew>, TNew::Error>
 where {
         Ok(Rect {

@@ -7,7 +7,7 @@ use num_traits::{CheckedSub, One, SaturatingSub, Zero};
 use range_set_blaze_0_5::{CheckSortedDisjoint, DynSortedDisjoint, Integer, SortedDisjoint};
 
 use crate::{
-    CreateRange, ImageDimension, Rect, SanitizeSortedDisjoint, SignedNonZeroable, UncheckedCast,
+    CreateRange, ImageDimension, Roi, SanitizeSortedDisjoint, SignedNonZeroable, UncheckedCast,
 };
 
 // pub struct DilateIter<TIter>
@@ -25,7 +25,7 @@ use crate::{
 // }
 pub struct DilateIter<'a, T: CreateRange<Item: Integer>> {
     parent: DynSortedDisjoint<'a, T::Item>,
-    bounds: Rect<u32>,
+    bounds: Roi<u32>,
 }
 impl<'a, TItem> DilateIter<'a, TItem>
 where
@@ -102,7 +102,7 @@ where
 
         Self {
             parent: acc,
-            bounds: iter.bounds(),
+            bounds: iter.roi(),
         }
     }
 }
@@ -131,12 +131,12 @@ where
 }
 
 impl<'a, T: CreateRange<Item: range_set_blaze_0_5::Integer>> ImageDimension for DilateIter<'a, T> {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
     fn width(&self) -> NonZeroU32 {
-        self.bounds.width
+        self.bounds.width()
     }
 }
 
@@ -180,15 +180,13 @@ where
 mod tests {
     use std::num::NonZeroU32;
 
-    use crate::{ImaskSet, Rect};
-
-    const NONZERO_80: NonZeroU32 = NonZeroU32::new(80).unwrap();
+    use crate::{ImaskSet, Roi};
 
     #[test]
     fn dilate_2x() {
         let top = 5u32 * 80 + 50..5 * 80 + 52;
         let bottom = 6 * 80 + 50..6 * 80 + 52;
-        let data = [top, bottom].with_roi(Rect::new(0, 10, NONZERO_80, NONZERO_80));
+        let data = [top, bottom].with_roi(Roi::new(0u32..80, 10u32..90));
         let data_dilate = data
             .dilate_range(const { NonZeroU32::new(2).unwrap() })
             .collect::<Vec<_>>();

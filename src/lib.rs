@@ -11,8 +11,10 @@ mod io;
 mod map;
 mod maybe_result;
 mod non_zero;
+mod number;
 mod pipeline_error;
 mod rect;
+mod roi;
 mod set;
 mod span;
 mod unchecked_cast;
@@ -32,6 +34,7 @@ pub use maybe_result::*;
 pub use non_zero::*;
 pub use pipeline_error::*;
 pub use rect::*;
+pub use roi::*;
 pub use set::*;
 pub use span::*;
 pub use unchecked_cast::*;
@@ -52,11 +55,21 @@ impl<TMeta> OrderedRangeItem<TMeta> {
 }
 
 pub trait ImageDimension {
-    fn bounds(&self) -> Rect<u32>;
+    fn roi(&self) -> Roi<u32>;
+    #[deprecated(note = "Use roi instead")]
+    #[allow(deprecated)]
+    fn bounds(&self) -> Rect<u32> {
+        Rect::from(self.roi())
+    }
     fn width(&self) -> NonZero<u32>;
 }
 
 impl<I: ImageDimension + ?Sized> ImageDimension for &mut I {
+    fn roi(&self) -> Roi<u32> {
+        (**self).roi()
+    }
+
+    #[allow(deprecated)]
     fn bounds(&self) -> Rect<u32> {
         (**self).bounds()
     }

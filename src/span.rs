@@ -6,7 +6,7 @@ use std::{
 
 use num_traits::One;
 
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, SignedNonZeroable, UncheckedCast};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, SignedNonZeroable, UncheckedCast};
 
 mod affine_transform;
 #[cfg(test)]
@@ -40,9 +40,6 @@ pub use rect::*;
 pub use subtract::*;
 pub use union::*;
 pub use union_all::*;
-
-#[cfg(test)]
-pub(crate) use ascii_bitmap::{AsciiBitmap, AsciiBitmapIter};
 
 /// x_end is exclusive
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
@@ -79,13 +76,14 @@ impl<T: Display> Display for Span<T> {
     }
 }
 
-impl<T: SignedNonZeroable + Copy + Sub<Output = T>> From<Span<T>> for Rect<T>
+#[allow(deprecated)]
+impl<T: SignedNonZeroable + Copy + Sub<Output = T>> From<Span<T>> for crate::Rect<T>
 where
     // T::NonZero: One doesn't work, as NonZero<T> doesn't implement One
     T: One,
 {
     fn from(value: Span<T>) -> Self {
-        Rect {
+        crate::Rect {
             x: value.x.start,
             y: value.y,
             width: value.x.len_non_zero(),
@@ -143,14 +141,14 @@ impl<TParent: Iterator<Item: CreateRange> + ImageDimension> ImageDimension
 where
     u32: TryInto<<TParent::Item as CreateRange>::Item, Error: Debug>,
 {
-    fn bounds(&self) -> Rect<u32> {
-        let bounds = self.parent.bounds();
+    fn roi(&self) -> Roi<u32> {
+        let bounds = self.parent.roi();
         #[cfg(debug_assertions)]
-        if let Err(e) = (bounds.width.get() * bounds.height.get()).try_into() {
+        if let Err(e) = (bounds.width().get() * bounds.height().get()).try_into() {
             panic!(
                 "{}*{} overflows {}: {e:?}",
-                bounds.width,
-                bounds.height,
+                bounds.width(),
+                bounds.height(),
                 std::any::type_name::<<TParent::Item as CreateRange>::Item>()
             );
         }
@@ -201,9 +199,9 @@ where
         let local_y = start / width;
         let row_start = local_y * width;
         let cut = row_start + width;
-        let bounds = self.parent.bounds();
-        let offset_x = bounds.x.cast_unchecked();
-        let offset_y = bounds.y.cast_unchecked();
+        let bounds = self.parent.roi();
+        let offset_x = bounds.x.start.cast_unchecked();
+        let offset_y = bounds.y.start.cast_unchecked();
         let global_y = local_y + offset_y;
         let x = if let Ok(rest) = NonZeroRange::try_from(cut..end) {
             self.pending = Some(rest);
@@ -275,8 +273,8 @@ mod tests {
     #[test]
     fn rect_from_span_roundtrip() {
         let x = Span::new(10u32..20, 2);
-        let rect = Rect::from(x);
-        let spans = rect.into_spans().collect::<Vec<_>>();
+        let roi = Roi::from(x);
+        let spans = roi.into_spans().collect::<Vec<_>>();
         assert_eq!(vec![x], spans);
     }
 }

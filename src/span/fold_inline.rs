@@ -1,6 +1,6 @@
 use std::{iter::FusedIterator, num::NonZero};
 
-use crate::{ImageDimension, Rect};
+use crate::{ImageDimension, Roi};
 
 #[derive(Clone)]
 pub struct FoldInlineSpanIter<I: Iterator, F: FnMut(&mut A, &I::Item), A> {
@@ -69,8 +69,8 @@ where
     I: ImageDimension + Iterator,
     F: FnMut(&mut A, &I::Item),
 {
-    fn bounds(&self) -> Rect<u32> {
-        self.parent.bounds()
+    fn roi(&self) -> Roi<u32> {
+        self.parent.roi()
     }
 
     fn width(&self) -> NonZero<u32> {

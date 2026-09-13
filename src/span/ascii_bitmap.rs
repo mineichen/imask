@@ -1,6 +1,6 @@
 use std::{fmt::Debug, marker::PhantomData, num::NonZeroU32, ops::Add};
 
-use crate::{ImageDimension, NonZeroRange, Rect, SignedNonZeroable, Span, UncheckedCast};
+use crate::{ImageDimension, NonZeroRange, SignedNonZeroable, Span, UncheckedCast};
 
 #[derive(Clone)]
 pub(crate) struct AsciiBitmap<const WIDTH: usize, const HEIGHT: usize> {
@@ -52,14 +52,14 @@ impl<const WIDTH: usize, const HEIGHT: usize> AsciiBitmap<WIDTH, HEIGHT> {
 impl<T, const WIDTH: usize, const HEIGHT: usize> ImageDimension
     for AsciiBitmapIter<T, WIDTH, HEIGHT>
 {
-    fn bounds(&self) -> Rect<u32> {
+    fn roi(&self) -> crate::Roi<u32> {
         let height = const { usize_to_nonzero_u32(HEIGHT) };
         let width = self.width();
-        Rect {
-            x: self.bitmap.offset_x.cast_unchecked(),
-            y: self.bitmap.offset_y.cast_unchecked(),
-            width,
-            height,
+        let x = self.bitmap.offset_x.cast_unchecked();
+        let y = self.bitmap.offset_y.cast_unchecked();
+        crate::Roi {
+            x: NonZeroRange::new_unchecked(x..x + width.get()),
+            y: NonZeroRange::new_unchecked(y..y + height.get()),
         }
     }
 
@@ -104,10 +104,10 @@ where
             self.data_x += 1;
         }
         let end_x = self.data_x.cast_unchecked() + offset_x;
-        Some(Span::new(
-            NonZeroRange::new_unchecked(start_x..end_x),
-            self.data_y.cast_unchecked() + offset_y,
-        ))
+        Some(Span {
+            x: NonZeroRange::new_unchecked(start_x..end_x),
+            y: self.data_y.cast_unchecked() + offset_y,
+        })
     }
 }
 

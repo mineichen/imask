@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::iter::FusedIterator;
 
 use super::peekable::Peekable;
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, Span};
 
 pub struct Intersect<TA: Iterator, TB: Iterator> {
     a: Peekable<TA>,
@@ -29,25 +29,16 @@ fn assert_sorted_and_disjoint<T: Ord + Copy + Debug>(last: &Option<Span<T>>, cur
 impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimension
     for Intersect<TA, TB>
 {
-    fn bounds(&self) -> Rect<u32> {
-        let a = self.a.parent.bounds();
-        let b = self.b.parent.bounds();
-        let x = a.x.max(b.x);
-        let y = a.y.max(b.y);
-        let x_end = (a.x + a.width.get()).min(b.x + b.width.get());
-        let y_end = (a.y + a.height.get()).min(b.y + b.height.get());
-        Rect {
-            x,
-            y,
-            width: std::num::NonZero::new(x_end.saturating_sub(x))
-                .unwrap_or_else(|| std::num::NonZero::new(1).unwrap()),
-            height: std::num::NonZero::new(y_end.saturating_sub(y))
-                .unwrap_or_else(|| std::num::NonZero::new(1).unwrap()),
-        }
+    fn roi(&self) -> Roi<u32> {
+        self.a
+            .parent
+            .roi()
+            .intersection(&self.b.parent.roi())
+            .expect("Checked during construction")
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.bounds().width
+        self.roi().width()
     }
 }
 
@@ -197,13 +188,13 @@ mod tests {
 
     #[test]
     fn width_matches_bounds_for_offset_inputs() {
-        let a = SortedRanges::<u32>::from(Span::new(0..10, 0));
-        let b = SortedRanges::<u32>::from(Span::new(5..15, 0));
+        let a = SortedRanges::from(Span::new(0u16..10, 0));
+        let b = SortedRanges::from(Span::new(5u16..15, 0));
         let intersect = Intersect::new(a.spans::<u32>(), b.spans::<u32>());
         assert_eq!(
             intersect.width(),
-            intersect.bounds().width,
-            "width() must equal bounds().width"
+            intersect.roi().width(),
+            "width() must equal roi().width()"
         );
     }
 

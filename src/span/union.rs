@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use super::peekable::Peekable;
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, Span};
 
 pub struct Union<TA: Iterator, TB: Iterator> {
     a: Peekable<TA>,
@@ -11,24 +11,24 @@ pub struct Union<TA: Iterator, TB: Iterator> {
 impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimension
     for Union<TA, TB>
 {
-    fn bounds(&self) -> Rect<u32> {
-        let a_bounds = self.a.parent.bounds();
-        let b_bounds = self.b.parent.bounds();
+    fn roi(&self) -> Roi<u32> {
+        let a_bounds = self.a.parent.roi();
+        let b_bounds = self.b.parent.roi();
         debug_assert_eq!(
-            a_bounds.width,
+            a_bounds.width(),
             self.a.parent.width(),
-            "Union parent A width must equal its bounds().width"
+            "Union parent A width must equal its roi().width()"
         );
         debug_assert_eq!(
-            b_bounds.width,
+            b_bounds.width(),
             self.b.parent.width(),
-            "Union parent B width must equal its bounds().width"
+            "Union parent B width must equal its roi().width()"
         );
         a_bounds.union(&b_bounds)
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.bounds().width
+        self.roi().width()
     }
 }
 
@@ -128,33 +128,28 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
 
     use crate::ImaskSet;
 
     use super::*;
 
-    const NON_ZERO_10: NonZeroU32 = NonZeroU32::new(10).unwrap();
-    const NON_ZERO_12: NonZeroU32 = NonZeroU32::new(12).unwrap();
-    const NON_ZERO_14: NonZeroU32 = NonZeroU32::new(14).unwrap();
-
     #[test]
     fn bounds_are_combined() {
-        let a = Rect::new(10u32, 10, NON_ZERO_10, NON_ZERO_10).into_spans();
-        let b = Rect::new(8u32, 6, NON_ZERO_10, NON_ZERO_10).into_spans();
-        let rect = a.union(b).bounds();
-        assert_eq!(Rect::new(8u32, 6u32, NON_ZERO_12, NON_ZERO_14), rect);
+        let a = Roi::new(10u32..20, 10..20).into_spans();
+        let b = Roi::new(8u32..18, 6..16).into_spans();
+        let rect = a.union(b).roi();
+        assert_eq!(Roi::new(8u32..20, 6..20), rect);
     }
 
     #[test]
     fn width_matches_bounds_for_offset_inputs() {
-        let a = Rect::new(0u32, 0, NON_ZERO_10, NON_ZERO_10).into_spans();
-        let b = Rect::new(5u32, 0, NON_ZERO_10, NON_ZERO_10).into_spans();
+        let a = Roi::new(0u32..10, 0..10).into_spans();
+        let b = Roi::new(5u32..15, 0..10).into_spans();
         let union = a.union(b);
         assert_eq!(
             union.width(),
-            union.bounds().width,
-            "width() must equal bounds().width"
+            union.roi().width(),
+            "width() must equal roi().width()"
         );
     }
 

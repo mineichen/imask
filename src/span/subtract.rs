@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::iter::FusedIterator;
 
 use super::peekable::Peekable;
-use crate::{CreateRange, ImageDimension, NonZeroRange, Rect, Span};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, Span};
 
 pub struct Subtract<TA: Iterator, TB: Iterator> {
     a: Peekable<TA>,
@@ -11,8 +11,8 @@ pub struct Subtract<TA: Iterator, TB: Iterator> {
 }
 
 impl<TA: Iterator + ImageDimension, TB: Iterator> ImageDimension for Subtract<TA, TB> {
-    fn bounds(&self) -> Rect<u32> {
-        self.a.parent.bounds()
+    fn roi(&self) -> Roi<u32> {
+        self.a.parent.roi()
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
@@ -133,7 +133,7 @@ mod tests {
         let a = SortedRanges::from(Span::new(10u32..20, 2));
         let b = SortedRanges::from(Span::new(10u32..20, 3));
         let sub = a.spans::<u8>().subtract(b.spans::<u8>());
-        assert_eq!(a.bounds(), sub.bounds());
+        assert_eq!(a.roi(), sub.roi());
     }
 
     #[test]

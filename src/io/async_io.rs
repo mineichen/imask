@@ -9,10 +9,9 @@ use futures_io::{AsyncRead, AsyncWrite};
 use pin_project_lite::pin_project;
 
 use super::{
-    HEADER_SIZE, IntoRangeResult, U64_SIZE, header::Header, read_u64, roi::Roi, unexpected_eof,
-    write_u64,
+    HEADER_SIZE, IntoRangeResult, U64_SIZE, header::Header, read_u64, unexpected_eof, write_u64,
 };
-use crate::{CreateRange, ImageDimension, NonZeroRange, io::header::DataType};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, io::header::DataType};
 
 fn poll_write_all<W: AsyncWrite + ?Sized>(
     mut writer: Pin<&mut W>,
@@ -90,13 +89,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
-        let roi = this.stream.bounds();
-        let roi = Roi {
-            offset_x: roi.x,
-            offset_y: roi.y,
-            width: roi.width,
-            height: roi.height,
-        };
+        let roi = this.stream.roi();
         loop {
             match &mut this.state {
                 WriterState::Header => {
@@ -196,7 +189,7 @@ impl<R: AsyncRead + Unpin> Future for HeaderReader<R> {
 pin_project! {
     pub struct AsyncRangeStream<R> {
         #[pin] reader: R,
-        roi: Roi,
+        roi: Roi<u32>,
         buf: [u8; U64_SIZE * 2],
         pos: usize,
         last_end: u64,
@@ -204,17 +197,12 @@ pin_project! {
 }
 
 impl<R> ImageDimension for AsyncRangeStream<R> {
-    fn bounds(&self) -> crate::Rect<u32> {
-        crate::Rect {
-            x: self.roi.offset_x,
-            y: self.roi.offset_y,
-            width: self.roi.width,
-            height: self.roi.height,
-        }
+    fn roi(&self) -> crate::Roi<u32> {
+        self.roi
     }
 
     fn width(&self) -> std::num::NonZero<u32> {
-        self.roi.width
+        self.roi.width()
     }
 }
 
@@ -272,31 +260,24 @@ mod tests {
     use testresult::TestResult;
 
     use crate::io::PROTOCOL_VERSION;
-    use crate::{ImaskSet, Rect, WithRoi};
+    use crate::{ImaskSet, Roi, WithRoi};
 
     use super::*;
 
-    const NONZERO_1000: NonZeroU32 = NonZeroU32::new(1000).unwrap();
-    const ROI: Rect<u32> = Rect::new(0, 0, NONZERO_1000, NONZERO_1000);
+    const ROI: Roi<u32> = Roi {
+        x: NonZeroRange::<u32>::new_const(0..1000),
+        y: NonZeroRange::<u32>::new_const(0..1000),
+    };
     fn with_1000_roi<I: IntoIterator>(
         inner: I,
     ) -> WithRoi<futures_util::stream::Iter<I::IntoIter>> {
         WithRoi::new(futures_util::stream::iter(inner), ROI)
     }
 
-    fn make_header_bytes(
-        offset_x: u32,
-        offset_y: u32,
-        width: NonZeroU32,
-        height: NonZeroU32,
-    ) -> Vec<u8> {
-        Header::new(
-            DataType::U64,
-            DataType::U64,
-            Roi::new(offset_x, offset_y, width, height),
-        )
-        .to_bytes()
-        .to_vec()
+    fn make_header_bytes(roi: Roi<u32>) -> Vec<u8> {
+        Header::new(DataType::U64, DataType::U64, roi)
+            .to_bytes()
+            .to_vec()
     }
 
     fn make_range_bytes(gap: u64, len: u64) -> [u8; 16] {
@@ -349,7 +330,7 @@ mod tests {
 
     #[tokio::test]
     async fn header_only_is_empty() {
-        let buf = make_header_bytes(0, 0, NonZeroU32::MIN, NonZeroU32::MIN);
+        let buf = make_header_bytes(Roi::new(0..1, 0..1));
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
         let result: Vec<_> = reader.try_collect().await.unwrap();
         assert!(result.is_empty());
@@ -434,7 +415,7 @@ mod tests {
 
     #[tokio::test]
     async fn truncated_range_partial_gap() {
-        let mut buf = make_header_bytes(0, 0, NonZeroU32::MIN, NonZeroU32::MIN);
+        let mut buf = make_header_bytes(Roi::new(0..1, 0..1));
         buf.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
         let result = reader.try_collect::<Vec<_>>().await;
@@ -443,7 +424,7 @@ mod tests {
 
     #[tokio::test]
     async fn truncated_range_gap_complete_len_partial() {
-        let mut buf = make_header_bytes(0, 0, NonZeroU32::MIN, NonZeroU32::MIN);
+        let mut buf = make_header_bytes(Roi::new(0..1, 0..1));
         buf.extend_from_slice(&make_range_bytes(10, 100)[..12]);
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
         let result = reader.try_collect::<Vec<_>>().await;
@@ -463,7 +444,7 @@ mod tests {
 
     #[tokio::test]
     async fn len_zero_terminates_stream() {
-        let mut buf = make_header_bytes(0, 0, NONZERO_1000, NONZERO_1000);
+        let mut buf = make_header_bytes(ROI);
         buf.extend_from_slice(&make_range_bytes(10, 100));
         buf.extend_from_slice(&make_range_bytes(5, 0));
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
@@ -537,7 +518,10 @@ mod tests {
         let height = NonZeroU32::new(3).unwrap();
         let content_width = width.get() - offset_x;
 
-        let roi = Rect::new(offset_x, offset_y, width, height);
+        let roi = Roi::new(
+            offset_x..offset_x + width.get(),
+            offset_y..offset_y + height.get(),
+        );
 
         let local_ranges: Vec<RangeInclusive<u64>> = (0u64..height.get() as u64)
             .map(|i| {
@@ -565,7 +549,7 @@ mod tests {
         writer.await.unwrap();
 
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
-        let reader_roi = reader.bounds();
+        let reader_roi = reader.roi();
         assert_eq!(roi, reader_roi);
 
         let result: Vec<_> = reader.try_collect().await.unwrap();
@@ -578,16 +562,14 @@ mod tests {
 
     #[tokio::test]
     async fn reader_roi_forwarded_to_writer() -> TestResult {
-        use crate::{Rect, SortedRanges};
+        use crate::SortedRanges;
 
-        let bounds = Rect::new(0u32, 0, NONZERO_1000, NONZERO_1000);
         let sorted = SortedRanges::<u64>::try_from_ordered_iter(
-            [10u64..20, 30..40, 1050..1060].with_roi(bounds),
+            [10u64..20, 30..40, 1050..1060].with_roi(ROI),
         )
         .unwrap();
         let expected: Vec<_> = sorted.iter_roi::<NonZeroRange<u64>>().collect();
 
-        let roi = Rect::new(0, 0, NONZERO_1000, NONZERO_1000);
         let phase1_buf = {
             let mut buf = Vec::new();
             AsyncRangeWriter::new(
@@ -599,8 +581,7 @@ mod tests {
         };
 
         let reader = AsyncRangeStream::new(&phase1_buf[..]).await.unwrap();
-        let reader_roi = reader.bounds();
-        assert_eq!(roi, reader_roi);
+        assert_eq!(ROI, reader.roi());
 
         let mut phase2_buf = Vec::new();
         AsyncRangeWriter::new(&mut phase2_buf, reader)
@@ -628,12 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn async_writer_stores_local_coordinates() {
-        let roi = Rect::new(
-            1u32,
-            2,
-            NonZeroU32::new(100).unwrap(),
-            NonZeroU32::new(200).unwrap(),
-        );
+        let roi = Roi::new(1u32..101, 2u32..202);
         let mut buf = Vec::new();
         AsyncRangeWriter::new(
             &mut buf,
@@ -657,12 +633,7 @@ mod tests {
         use super::super::sync_io::SyncRangeWriter;
         use crate::SortedRanges;
 
-        let roi = Rect::new(
-            1u32,
-            2,
-            NonZeroU32::new(100).unwrap(),
-            NonZeroU32::new(200).unwrap(),
-        );
+        let roi = Roi::new(1u32..101, 2u32..202);
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let local_ranges_roi = local_ranges.clone().with_roi(roi);
         let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi)?;
@@ -707,12 +678,7 @@ mod tests {
         use super::super::sync_io::SyncRangeWriter;
         use crate::SortedRanges;
 
-        let roi = Rect::new(
-            1u32,
-            2,
-            NonZeroU32::new(100).unwrap(),
-            NonZeroU32::new(200).unwrap(),
-        );
+        let roi = Roi::new(1u32..101, 2u32..202);
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let local_ranges_roi = local_ranges.clone().with_roi(roi);
         let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi)?;
@@ -729,7 +695,7 @@ mod tests {
         };
 
         let reader = AsyncRangeStream::new(&sync_buf[..]).await.unwrap();
-        assert_eq!(reader.bounds(), roi);
+        assert_eq!(reader.roi(), roi);
         let reader_ranges: Vec<_> = reader.try_collect().await.unwrap();
         let via_async = SortedRanges::<u64>::try_from_ordered_iter(reader_ranges.with_roi(roi))?;
 

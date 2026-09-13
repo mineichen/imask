@@ -2,7 +2,7 @@ use std::{fmt::Debug, iter::FusedIterator, marker::PhantomData, num::NonZero};
 
 use num_traits::{One, Zero};
 
-use crate::{CreateRange, ImageDimension, Rect, UncheckedCast};
+use crate::{CreateRange, ImageDimension, NonZeroRange, Roi, UncheckedCast};
 
 #[cfg(feature = "range-set-blaze-0_5")]
 use std::ops::RangeInclusive;
@@ -49,21 +49,21 @@ where
     T: Iterator + ImageDimension,
     R: CreateRange,
 {
-    pub fn bounds(&self) -> Option<Rect<u32>> {
+    pub fn bounds(&self) -> Option<Roi<u32>> {
         if self.max_row < self.min_row {
             return None;
         }
 
-        let parent_bounds = self.parent.bounds();
-        let width = self.max_column - self.min_column + 1;
-        let height = self.max_row - self.min_row + 1;
+        let parent_bounds = self.parent.roi();
 
-        Some(Rect::new(
-            parent_bounds.x + self.min_column,
-            parent_bounds.y + self.min_row,
-            NonZero::new(width).expect("width should be non-zero"),
-            NonZero::new(height).expect("height should be non-zero"),
-        ))
+        let x_start = parent_bounds.x.start + self.min_column;
+        let x_end = parent_bounds.x.start + self.max_column + 1;
+        let y_start = parent_bounds.y.start + self.min_row;
+        let y_end = parent_bounds.y.start + self.max_row + 1;
+        Some(Roi {
+            x: NonZeroRange::new_unchecked(x_start..x_end),
+            y: NonZeroRange::new_unchecked(y_start..y_end),
+        })
     }
 }
 
@@ -132,8 +132,8 @@ where
     fn width(&self) -> NonZero<u32> {
         self.parent.width()
     }
-    fn bounds(&self) -> Rect<u32> {
-        self.parent.bounds()
+    fn roi(&self) -> Roi<u32> {
+        self.parent.roi()
     }
 }
 
@@ -172,13 +172,12 @@ mod tests {
 
     #[test]
     fn bounds_uses_parent_offset() {
-        let roi = Rect::new(100, 100, WIDTH_U32, WIDTH_U32);
+        let roi = Roi::new(100u32..110, 100u32..110);
         let mut inspector = [13..18usize, 32..33]
             .with_roi(roi)
             .inspect_bounds::<Range<usize>>();
         assert_eq!(2, (&mut inspector).count());
-        let expected =
-            const { Rect::new(102, 101, NonZero::new(6).unwrap(), NonZero::new(3).unwrap()) };
+        let expected = Roi::new(102u32..108, 101u32..104);
         assert_eq!(inspector.bounds(), Some(expected));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
@@ -188,7 +187,7 @@ mod tests {
         let source = std::iter::once(2..27usize).with_bounds(WIDTH_U32, WIDTH_U32);
         let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         assert_eq!(1, (&mut inspector).count());
-        let b = const { Rect::new(0, 0, NonZero::new(10).unwrap(), NonZero::new(3).unwrap()) };
+        let b = Roi::new(0u32..10, 0u32..3);
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
@@ -201,7 +200,7 @@ mod tests {
         // let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         let count = (&mut inspector).count();
         assert_eq!(count, 3);
-        let b = const { Rect::new(0, 0, NonZero::new(10).unwrap(), NonZero::new(7).unwrap()) };
+        let b = Roi::new(0u32..10, 0u32..7);
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
@@ -213,7 +212,7 @@ mod tests {
             .inspect_bounds();
         // let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         assert_eq!(2, (&mut inspector).count());
-        let b = const { Rect::new(2, 1, NonZero::new(6).unwrap(), NonZero::new(3).unwrap()) };
+        let b = Roi::new(2u32..8, 1u32..4);
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }

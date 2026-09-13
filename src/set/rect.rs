@@ -8,7 +8,7 @@ use std::{
 
 use num_traits::Zero;
 
-use crate::{CreateRange, ImageDimension, Rect, SignedNonZeroable};
+use crate::{CreateRange, ImageDimension, Roi, SignedNonZeroable};
 
 pub struct RectIterator<R: CreateRange<Item: SignedNonZeroable>> {
     pub kind: RectIteratorKind<R>,
@@ -30,14 +30,12 @@ impl<R: CreateRange<Item: SignedNonZeroable + TryInto<u32, Error: Debug>>> Image
             .expect("self.width is NonZero")
     }
 
-    fn bounds(&self) -> crate::Rect<u32> {
+    fn roi(&self) -> Roi<u32> {
         let height = NonZeroU32::new(self.height.into().try_into().expect("height < u32::MAX"))
             .expect("self.width is NonZero");
-        Rect {
-            x: 0,
-            y: 0,
-            width: self.width(),
-            height,
+        Roi {
+            x: crate::NonZeroRange::from_dimension(self.width()),
+            y: crate::NonZeroRange::from_dimension(height),
         }
     }
 }

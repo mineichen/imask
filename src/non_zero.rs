@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::num::NonZero;
 use std::ops::{Add, Deref, Range, RangeInclusive, Sub};
 
-use num_traits::One;
+use num_traits::{One, Zero};
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
@@ -11,6 +11,10 @@ use crate::CreateRange;
 
 /// NonZero is only checked during Debug and should not be relied upon for safety
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 pub struct NonZeroRange<T>(RangeUnchecked<T>);
 
 macro_rules! impl_into {
@@ -31,6 +35,27 @@ impl_into!(u8, u64);
 impl_into!(u16, u32);
 impl_into!(u16, u64);
 impl_into!(u32, u64);
+
+macro_rules! impl_new_const {
+    ($src:ty) => {
+        impl NonZeroRange<$src> {
+            pub const fn new_const(value: Range<$src>) -> Self {
+                if value.start >= value.end {
+                    panic!("Invalid range");
+                }
+                Self(RangeUnchecked {
+                    start: value.start,
+                    end: value.end,
+                })
+            }
+        }
+    };
+}
+impl_new_const!(u8);
+impl_new_const!(u16);
+impl_new_const!(u32);
+impl_new_const!(u64);
+impl_new_const!(usize);
 
 impl<T: Debug> Debug for NonZeroRange<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -63,6 +88,10 @@ impl<T: Serialize> serde::Serialize for NonZeroRange<T> {
 
 /// Exists, because std::ops::Range is not Copy
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 pub struct RangeUnchecked<T> {
     pub start: T,
     pub end: T,
@@ -303,6 +332,23 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         );
         r
     }
+    pub fn from_dimension(x: T::NonZero) -> Self
+    where
+        T: SignedNonZeroable + Zero,
+    {
+        Self(RangeUnchecked {
+            start: T::zero(),
+            end: x.into(),
+        })
+    }
+    pub fn union(&self, other: &Self) -> Self
+    where
+        T: Copy,
+    {
+        let start = min(self.start, other.start);
+        let end = max(self.end, other.end);
+        Self::new_unchecked(RangeUnchecked { start, end })
+    }
     pub fn intersection(&self, other: &Self) -> Option<Self>
     where
         T: Copy,
@@ -314,6 +360,16 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         } else {
             None
         }
+    }
+
+    pub fn try_cast<TNew: Debug + Ord + TryFrom<T>>(
+        self,
+    ) -> Result<NonZeroRange<TNew>, TNew::Error> {
+        let inner = self.0;
+        let start = inner.start.try_into()?;
+        let end = inner.end.try_into()?;
+
+        Ok(NonZeroRange::new_unchecked(start..end))
     }
 }
 impl<T: Ord> NonZeroRange<T> {
@@ -378,7 +434,6 @@ pub struct RangeZeroLenghtError<T>(T);
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU8;
 
     use super::*;
 

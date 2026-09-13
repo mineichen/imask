@@ -1,6 +1,6 @@
 use std::{iter::FusedIterator, num::NonZero};
 
-use crate::{ImageDimension, Rect};
+use crate::{ImageDimension, NonZeroRange, Roi};
 
 #[cfg(feature = "async-io")]
 pin_project_lite::pin_project! {
@@ -61,12 +61,10 @@ impl<I: futures_core::Stream> futures_core::Stream for WithBounds<I> {
 impl<I: FusedIterator> FusedIterator for WithBounds<I> {}
 
 impl<I> ImageDimension for WithBounds<I> {
-    fn bounds(&self) -> Rect<u32> {
-        Rect {
-            x: 0,
-            y: 0,
-            width: self.width,
-            height: self.height,
+    fn roi(&self) -> Roi<u32> {
+        Roi {
+            x: NonZeroRange::from_dimension(self.width),
+            y: NonZeroRange::from_dimension(self.height),
         }
     }
     fn width(&self) -> NonZero<u32> {
