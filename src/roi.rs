@@ -37,8 +37,8 @@ impl<T: SignedNonZeroable> Roi<T> {
         x: TNew,
         y: TNew,
     ) -> Self {
-        let x: NonZeroRange<T> = x.try_into().ok().expect("X is invalid");
-        let y: NonZeroRange<T> = y.try_into().ok().expect("Y is invalid");
+        let x: NonZeroRange<T> = x.try_into().expect("X is invalid");
+        let y: NonZeroRange<T> = y.try_into().expect("Y is invalid");
         Self { x, y }
     }
 

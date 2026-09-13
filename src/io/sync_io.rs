@@ -151,9 +151,11 @@ impl<T> SortedRanges<T> {
         let bounds = header.roi;
 
         let mut all_included = Vec::new();
-        let all_excluded = input[HEADER_SIZE..]
-            .chunks_exact(U64_SIZE * 2)
-            .map(|chunk| (read_u64(chunk), read_u64(&chunk[U64_SIZE..])))
+
+        let (chunks, _ignored_on_purpose) = input[HEADER_SIZE..].as_chunks();
+        let all_excluded = chunks
+            .iter()
+            .map(|chunk: &[_; 16]| (read_u64(chunk), read_u64(&chunk[U64_SIZE..])))
             .take_while(|&(_, len)| len != 0)
             .map(|(gap, len)| {
                 let included = T::try_from(len)
