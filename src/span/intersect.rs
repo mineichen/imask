@@ -200,8 +200,8 @@ mod tests {
 
     #[test]
     fn width_matches_bounds_for_offset_inputs() -> TestResult {
-        let a = SortedRanges::from(Span::new(0u16..10, 0));
-        let b = SortedRanges::from(Span::new(5u16..15, 0));
+        let a = SortedRanges::<u32>::from(Span::new(0..10, 0));
+        let b = SortedRanges::<u32>::from(Span::new(5..15, 0));
         let intersect = Intersect::new(a.spans::<u32>(), b.spans::<u32>())?;
         assert_eq!(
             intersect.width(),
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn identical_spans() -> TestResult {
         assert_eq!(
-            vec![Span::new(0..10, 0u16)],
+            vec![Span::new(0..10, 0)],
             test_intersect([Span::new(0..10, 0)], [Span::new(0..10, 0)],)?
         );
         Ok(())
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn a_contained_in_b() -> TestResult {
         assert_eq!(
-            vec![Span::new(5..10, 0u16)],
+            vec![Span::new(5..10, 0)],
             test_intersect([Span::new(5..10, 0)], [Span::new(3..12, 0)],)?
         );
         Ok(())
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn b_contained_in_a() -> TestResult {
         assert_eq!(
-            vec![Span::new(3..12, 0u16)],
+            vec![Span::new(3..12, 0)],
             test_intersect([Span::new(0..20, 0)], [Span::new(3..12, 0)],)?
         );
         Ok(())
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn overlapping_both() -> TestResult {
         assert_eq!(
-            vec![Span::new(2..10, 0u16)],
+            vec![Span::new(2..10, 0)],
             test_intersect([Span::new(0..10, 0)], [Span::new(2..12, 0)],)?
         );
         Ok(())
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn multiple_overlaps_same_line() -> TestResult {
         assert_eq!(
-            vec![Span::new(3..5, 0u16), Span::new(10..15, 0u16),],
+            vec![Span::new(3..5, 0), Span::new(10..15, 0),],
             test_intersect(
                 [Span::new(0..5, 0), Span::new(8..15, 0),],
                 [Span::new(3..6, 0), Span::new(10..20, 0),],
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn span_extends_across_other_spans() -> TestResult {
         assert_eq!(
-            vec![Span::new(3..5, 0u16), Span::new(8..12, 0u16),],
+            vec![Span::new(3..5, 0), Span::new(8..12, 0),],
             test_intersect(
                 [Span::new(0..5, 0), Span::new(8..15, 0),],
                 [Span::new(3..12, 0)],
@@ -327,9 +327,9 @@ mod tests {
     fn multiple_lines() -> TestResult {
         assert_eq!(
             vec![
-                Span::new(5..10, 0u16),
-                Span::new(3..10, 1u16),
-                Span::new(3..7, 2u16),
+                Span::new(5..10, 0),
+                Span::new(3..10, 1),
+                Span::new(3..7, 2),
             ],
             test_intersect(
                 [
@@ -345,8 +345,8 @@ mod tests {
 
     #[test]
     fn is_commutative() -> TestResult {
-        let a = vec![Span::new(0..10, 0u16), Span::new(5..15, 1u16)];
-        let b = vec![Span::new(3..12, 0u16), Span::new(0..8, 1u16)];
+        let a = vec![Span::new(0..10, 0), Span::new(5..15, 1)];
+        let b = vec![Span::new(3..12, 0), Span::new(0..8, 1)];
 
         let ab = Intersect::new(w(a.clone()), w(b.clone()))?.collect::<Vec<_>>();
         let ba = Intersect::new(w(b), w(a))?.collect::<Vec<_>>();
@@ -361,8 +361,8 @@ mod tests {
     )]
     fn unsorted_input_panics() {
         let Ok(iter) = Intersect::new(
-            w([Span::new(0..10, 0u16), Span::new(2..5, 0u16)]),
-            w([Span::new(0..10, 1u16)]),
+            w([Span::new(0..10, 0), Span::new(2..5, 0)]),
+            w([Span::new(0..10, 1)]),
         ) else {
             panic!("expected overlapping bounds");
         };
@@ -376,8 +376,8 @@ mod tests {
     )]
     fn overlapping_input_panics() {
         let Ok(iter) = Intersect::new(
-            w([Span::new(0..5, 0u16), Span::new(3..10, 0u16)]),
-            w([Span::new(0..10, 1u16)]),
+            w([Span::new(0..5, 0), Span::new(3..10, 0)]),
+            w([Span::new(0..10, 1)]),
         ) else {
             panic!("expected overlapping bounds");
         };
@@ -391,8 +391,8 @@ mod tests {
     )]
     fn touching_input_panics() {
         let Ok(iter) = Intersect::new(
-            w([Span::new(0..5, 0u16), Span::new(5..10, 0u16)]),
-            w([Span::new(0..10, 0u16)]),
+            w([Span::new(0..5, 0), Span::new(5..10, 0)]),
+            w([Span::new(0..10, 0)]),
         ) else {
             panic!("expected overlapping bounds");
         };

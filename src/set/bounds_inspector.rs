@@ -172,12 +172,12 @@ mod tests {
 
     #[test]
     fn bounds_uses_parent_offset() {
-        let roi = Roi::new(100u32..110, 100u32..110);
+        let roi = Roi::new(100u32..110, 100..110);
         let mut inspector = [13..18usize, 32..33]
             .with_roi(roi)
             .inspect_bounds::<Range<usize>>();
         assert_eq!(2, (&mut inspector).count());
-        let expected = Roi::new(102u32..108, 101u32..104);
+        let expected = Roi::new(102..108, 101..104);
         assert_eq!(inspector.bounds(), Some(expected));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
@@ -187,7 +187,7 @@ mod tests {
         let source = std::iter::once(2..27usize).with_bounds(WIDTH_U32, WIDTH_U32);
         let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         assert_eq!(1, (&mut inspector).count());
-        let b = Roi::new(0u32..10, 0u32..3);
+        let b = Roi::new(0..10, 0..3);
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
@@ -200,7 +200,7 @@ mod tests {
         // let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         let count = (&mut inspector).count();
         assert_eq!(count, 3);
-        let b = Roi::new(0u32..10, 0u32..7);
+        let b = Roi::new(0..10, 0..7);
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }
@@ -212,7 +212,7 @@ mod tests {
             .inspect_bounds();
         // let mut inspector = BoundsInspector::<_, Range<usize>>::new(source);
         assert_eq!(2, (&mut inspector).count());
-        let b = Roi::new(2u32..8, 1u32..4);
+        let b = Roi::new(2..8, 1..4);
         assert_eq!(inspector.bounds(), Some(b));
         assert_eq!(inspector.width(), WIDTH_U32);
     }

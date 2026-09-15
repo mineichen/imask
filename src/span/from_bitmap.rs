@@ -174,7 +174,7 @@ mod tests {
         let data = [true, false, true, true];
         let spans: Vec<Span<u16>> =
             BitmapToSpanIter::from_bool_iter(data.iter().copied(), N4, N1).collect();
-        assert_eq!(spans, vec![Span::new(0..1u16, 0), Span::new(2..4u16, 0)]);
+        assert_eq!(spans, vec![Span::new(0..1, 0), Span::new(2..4, 0)]);
     }
 
     #[test]

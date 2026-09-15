@@ -290,40 +290,40 @@ mod tests {
 
     #[test]
     fn intersection_overlapping() {
-        let a = Roi::new(0u32..10, 0u32..10);
-        let b = Roi::new(5u32..15, 5u32..15);
-        let expected = Roi::new(5u32..10, 5u32..10);
+        let a = Roi::new(0u32..10, 0..10);
+        let b = Roi::new(5..15, 5..15);
+        let expected = Roi::new(5..10, 5..10);
         assert_eq!(Some(expected), a.intersection(&b));
         assert_eq!(Some(expected), b.intersection(&a));
     }
 
     #[test]
     fn intersection_disjoint() {
-        let a = Roi::new(0u32..10, 0u32..10);
-        let b = Roi::new(20u32..30, 20u32..30);
+        let a = Roi::new(0u32..10, 0..10);
+        let b = Roi::new(20..30, 20..30);
         assert_eq!(None, a.intersection(&b));
     }
 
     #[test]
     fn intersection_touching_edge_is_none() {
-        let a = Roi::new(0u32..10, 0u32..10);
-        let b = Roi::new(10u32..20, 0u32..10);
+        let a = Roi::new(0u32..10, 0..10);
+        let b = Roi::new(10..20, 0..10);
         assert_eq!(None, a.intersection(&b));
     }
 
     #[test]
     fn union_combines() {
-        let a = Roi::new(0u32..10, 0u32..10);
-        let b = Roi::new(5u32..15, 5u32..15);
-        let expected = Roi::new(0u32..15, 0u32..15);
+        let a = Roi::new(0u32..10, 0..10);
+        let b = Roi::new(5..15, 5..15);
+        let expected = Roi::new(0..15, 0..15);
         assert_eq!(expected, a.union(&b));
     }
 
     #[test]
     fn max_rect_does_not_overflow_on_union() {
         // Rect with x=MAX would overflow on len_x; Roi stores ends directly.
-        let a = Roi::new(u32::MAX - 10..u32::MAX, 0u32..10);
-        let b = Roi::new(0u32..10, 0u32..10);
+        let a = Roi::new(u32::MAX - 10..u32::MAX, 0..10);
+        let b = Roi::new(0..10, 0..10);
         let u = a.union(&b);
         assert_eq!(u.x.start, 0);
         assert_eq!(u.x.end, u32::MAX);

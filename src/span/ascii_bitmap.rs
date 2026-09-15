@@ -136,13 +136,13 @@ mod tests {
         ]).iter::<u16>();
         assert_eq!(
             vec![
-                Span::new(1u16..2, 0),
+                Span::new(1..2, 0),
                 Span::new(4..7, 0),
                 Span::new(8..10, 0),
-                Span::new(1u16..2, 1),
+                Span::new(1..2, 1),
                 Span::new(4..7, 1),
                 Span::new(8..9, 1),
-                Span::new(1u16..2, 3),
+                Span::new(1..2, 3),
                 Span::new(4..7, 3),
                 Span::new(9..10, 3)
             ],
@@ -159,7 +159,7 @@ mod tests {
         ], 10, 2).iter::<u16>();
         assert_eq!(
             vec![
-                Span::new(11u16..12, 2),
+                Span::new(11..12, 2),
                 Span::new(14..15, 2),
                 Span::new(10..13, 4),
                 Span::new(14..15, 4),

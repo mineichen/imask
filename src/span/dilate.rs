@@ -776,7 +776,7 @@ mod tests {
     fn correct_bounds() {
         const FIVE: NonZeroU8 = NonZeroU8::new(5).unwrap();
         let x = DilateSpanIterAcc::new(
-            SortedRanges::from(Span::new(6u8..7, 7)).spans_owned::<u8>(),
+            SortedRanges::<u16>::from(Span::new(6..7, 7)).spans_owned::<u8>(),
             FIVE,
         )
         .unwrap();
@@ -922,33 +922,33 @@ mod tests {
 
     #[test]
     fn accumulator_matches_union_single_span() {
-        run_both(vec![Span::new(5..10, 5u32)], 100, 100, 3);
+        run_both(vec![Span::new(5..10, 5)], 100, 100, 3);
     }
 
     #[test]
     fn accumulator_matches_union_edge() {
-        run_both(vec![Span::new(0..3, 0u32)], 100, 100, 2);
+        run_both(vec![Span::new(0..3, 0)], 100, 100, 2);
     }
 
     #[test]
     fn accumulator_matches_union_disjoint_rows() {
-        let spans = vec![Span::new(5..10, 0u32), Span::new(40..45, 50u32)];
+        let spans = vec![Span::new(5..10, 0), Span::new(40..45, 50)];
         run_both(spans, 100, 100, 2);
     }
 
     #[test]
     fn accumulator_matches_union_overlapping() {
         let spans = vec![
-            Span::new(0..4, 4u32),
-            Span::new(5..10, 5u32),
-            Span::new(8..13, 6u32),
+            Span::new(0..4, 4),
+            Span::new(5..10, 5),
+            Span::new(8..13, 6),
         ];
         run_both(spans, 100, 100, 4);
     }
 
     #[test]
     fn don_t_connect_far_appart() {
-        let spans = vec![Span::new(5..6, 0u32), Span::new(5..6, 6u32)];
+        let spans = vec![Span::new(5..6, 0), Span::new(5..6, 6)];
         run_both(spans, 100, 100, 2);
     }
 }

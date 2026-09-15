@@ -418,7 +418,7 @@ mod tests {
         let cy = 3.0_f64;
         let matrix = Matrix3::new(0.0, 1.0, cx - cy, -1.0, 0.0, cx + cy, 0.0, 0.0, 1.0);
 
-        let roi = Roi::new(0u32..6, 0u32..5);
+        let roi = Roi::new(0u32..6, 0..5);
         let wrapped = crate::WithRoi::new(l_spans.into_iter(), roi);
         let heap = AffineTransformHeap::new(wrapped, &matrix).unwrap();
         let result: Vec<Span<u32>> = heap.collect();
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn translate_completely_negative_returns_empty() {
-        let rect = Roi::new(1u32..4, 1u32..4);
+        let rect = Roi::new(1u32..4, 1..4);
         let spans = rect.into_spans();
         let matrix = Matrix3::new(1.0, 0.0, -100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
         assert!(matches!(
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn scale_from_center_no_gaps() {
-        let rect = Roi::new(2u32..5, 2u32..5);
+        let rect = Roi::new(2u32..5, 2..5);
         let spans = rect.into_spans();
 
         let cx = 3.0_f64;
@@ -853,7 +853,7 @@ mod tests {
 
     #[test]
     fn rotate_100x100_at_offset() {
-        let rect = Roi::new(100u32..200, 100u32..200);
+        let rect = Roi::new(100u32..200, 100..200);
         let spans = rect.into_spans();
 
         let cx = 150.0_f64;

@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn single_span() {
         let mut builder = SpanBoundsBuilder::<u32>::default();
-        let span = Span::new(10u32..20, 2u32);
+        let span = Span::new(10..20, 2);
         builder.add(span);
         let expected: Roi<u32> = span.into();
         assert_eq!(builder.build(), Ok(expected));
@@ -136,9 +136,9 @@ mod tests {
     #[test]
     fn aggregates_min_max() {
         let mut builder = SpanBoundsBuilder::<u32>::default();
-        builder.add(Span::new(10u32..20, 5u32));
-        builder.add(Span::new(2u32..8, 1u32));
-        builder.add(Span::new(4u32..30, 9u32));
+        builder.add(Span::new(10u32..20, 5));
+        builder.add(Span::new(2u32..8, 1));
+        builder.add(Span::new(4u32..30, 9));
         let expected = Roi::new(2u32..30, 1..10);
         assert_eq!(builder.build(), Ok(expected));
     }
@@ -146,9 +146,9 @@ mod tests {
     #[test]
     fn merge_combines_state() {
         let mut a = SpanBoundsBuilder::<u32>::default();
-        a.add(Span::new(10u32..20, 5u32));
+        a.add(Span::new(10u32..20, 5));
         let mut b = SpanBoundsBuilder::<u32>::default();
-        b.add(Span::new(2u32..8, 1u32));
+        b.add(Span::new(2u32..8, 1));
         a.merge(b);
         let expected = Roi::new(2u32..20, 1..6);
         assert_eq!(a.build(), Ok(expected));
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn from_iterator_and_extend() {
-        let spans = vec![Span::new(2u32..5, 1u32), Span::new(2u32..5, 2u32)];
+        let spans = vec![Span::new(2..5, 1), Span::new(2..5, 2)];
         let builder: SpanBoundsBuilder<u32> = spans.clone().into_iter().collect();
         let expected = Roi::new(2u32..5, 1..3);
         assert_eq!(builder.build(), Ok(expected));
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn single_pixel() {
         let mut builder = SpanBoundsBuilder::<u32>::default();
-        builder.add(Span::new(5u32..6, 7u32));
+        builder.add(Span::new(5u32..6, 7));
         let expected = Roi::new(5u32..6, 7..8);
         assert_eq!(builder.build(), Ok(expected));
     }
@@ -181,19 +181,19 @@ mod tests {
     #[test]
     fn works_for_u8_u16_u64_usize() {
         let mut b8 = SpanBoundsBuilder::<u8>::default();
-        b8.add(Span::new(2u8..5, 1u8));
+        b8.add(Span::new(2u8..5, 1));
         assert!(b8.build().is_ok());
 
         let mut b16 = SpanBoundsBuilder::<u16>::default();
-        b16.add(Span::new(2u16..5, 1u16));
+        b16.add(Span::new(2u16..5, 1));
         assert!(b16.build().is_ok());
 
         let mut b64 = SpanBoundsBuilder::<u64>::default();
-        b64.add(Span::new(2u64..5, 1u64));
+        b64.add(Span::new(2u64..5, 1));
         assert!(b64.build().is_ok());
 
         let mut bsize = SpanBoundsBuilder::<usize>::default();
-        bsize.add(Span::new(2usize..5, 1usize));
+        bsize.add(Span::new(2usize..5, 1));
         assert!(bsize.build().is_ok());
     }
 }

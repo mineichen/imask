@@ -132,7 +132,7 @@ mod tests {
         let a = Roi::new(10u32..20, 10..20).into_spans();
         let b = Roi::new(8u32..18, 6..16).into_spans();
         let rect = a.union(b).roi();
-        assert_eq!(Roi::new(8u32..20, 6..20), rect);
+        assert_eq!(Roi::new(8..20, 6..20), rect);
     }
 
     #[test]

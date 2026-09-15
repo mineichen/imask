@@ -186,7 +186,7 @@ mod tests {
     fn dilate_2x() {
         let top = 5u32 * 80 + 50..5 * 80 + 52;
         let bottom = 6 * 80 + 50..6 * 80 + 52;
-        let data = [top, bottom].with_roi(Roi::new(0u32..80, 10u32..90));
+        let data = [top, bottom].with_roi(Roi::new(0u32..80, 10..90));
         let data_dilate = data
             .dilate_range(const { NonZeroU32::new(2).unwrap() })
             .collect::<Vec<_>>();

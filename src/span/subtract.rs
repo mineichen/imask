@@ -124,9 +124,9 @@ mod tests {
         // trailing y=2 must survive.
         assert_eq!(
             vec![
-                Span::new(0..10, 0u16),
-                Span::new(5..10, 1u16),
-                Span::new(0..10, 2u16),
+                Span::new(0..10, 0),
+                Span::new(5..10, 1),
+                Span::new(0..10, 2),
             ],
             test_subtract(
                 [
@@ -141,8 +141,8 @@ mod tests {
 
     #[test]
     fn subtract_has_correct_bounds() {
-        let a = SortedRanges::from(Span::new(10u32..20, 2));
-        let b = SortedRanges::from(Span::new(10u32..20, 3));
+        let a = SortedRanges::<u64>::from(Span::new(10..20, 2));
+        let b = SortedRanges::<u64>::from(Span::new(10..20, 3));
         let sub = a.spans::<u8>().subtract(b.spans::<u8>());
         assert_eq!(a.roi(), sub.roi());
     }
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn no_overlap_different_lines() {
         assert_eq!(
-            vec![Span::new(0..10, 0u16)],
+            vec![Span::new(0..10, 0)],
             test_subtract([Span::new(0..10, 0)], [Span::new(0..10, 1)],)
         );
     }
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn no_overlap_same_line() {
         assert_eq!(
-            vec![Span::new(0..5, 0u16)],
+            vec![Span::new(0..5, 0)],
             test_subtract([Span::new(0..5, 0)], [Span::new(10..15, 0)],)
         );
     }
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn subtract_left() {
         assert_eq!(
-            vec![Span::new(8..15, 0u16)],
+            vec![Span::new(8..15, 0)],
             test_subtract([Span::new(5..15, 0)], [Span::new(0..8, 0)],)
         );
     }
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn subtract_right() {
         assert_eq!(
-            vec![Span::new(0..5, 0u16)],
+            vec![Span::new(0..5, 0)],
             test_subtract([Span::new(0..10, 0)], [Span::new(5..15, 0)],)
         );
     }
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn subtract_middle() {
         assert_eq!(
-            vec![Span::new(0..5, 0u16), Span::new(15..20, 0u16),],
+            vec![Span::new(0..5, 0), Span::new(15..20, 0),],
             test_subtract([Span::new(0..20, 0)], [Span::new(5..15, 0)],)
         );
     }
@@ -199,9 +199,9 @@ mod tests {
     fn multiple_subtractions() {
         assert_eq!(
             vec![
-                Span::new(0..3, 0u16),
-                Span::new(6..10, 0u16),
-                Span::new(14..20, 0u16),
+                Span::new(0..3, 0),
+                Span::new(6..10, 0),
+                Span::new(14..20, 0),
             ],
             test_subtract(
                 [Span::new(0..20, 0)],
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn b_extends_across_a_spans() {
         assert_eq!(
-            vec![Span::new(0..3, 0u16), Span::new(12..15, 0u16),],
+            vec![Span::new(0..3, 0), Span::new(12..15, 0),],
             test_subtract(
                 [Span::new(0..5, 0), Span::new(8..15, 0),],
                 [Span::new(3..12, 0)],
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn empty_mask() {
         assert_eq!(
-            vec![Span::new(0..10, 0u16)],
+            vec![Span::new(0..10, 0)],
             test_subtract([Span::new(0..10, 0)], std::iter::empty(),)
         );
     }
@@ -241,10 +241,10 @@ mod tests {
     fn multiple_lines_mixed() {
         assert_eq!(
             vec![
-                Span::new(0..5, 0u16),
-                Span::new(3..10, 1u16),
-                Span::new(0..3, 2u16),
-                Span::new(7..10, 2u16),
+                Span::new(0..5, 0),
+                Span::new(3..10, 1),
+                Span::new(0..3, 2),
+                Span::new(7..10, 2),
             ],
             test_subtract(
                 [
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn b_before_all_a() {
         assert_eq!(
-            vec![Span::new(5..10, 0u16)],
+            vec![Span::new(5..10, 0)],
             test_subtract([Span::new(5..10, 0)], [Span::new(0..3, 0)],)
         );
     }
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn b_after_all_a() {
         assert_eq!(
-            vec![Span::new(0..5, 0u16)],
+            vec![Span::new(0..5, 0)],
             test_subtract([Span::new(0..5, 0)], [Span::new(10..15, 0)],)
         );
     }
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn touching_at_boundary() {
         assert_eq!(
-            vec![Span::new(0..10, 0u16)],
+            vec![Span::new(0..10, 0)],
             test_subtract([Span::new(0..10, 0)], [Span::new(10..20, 0)],)
         );
     }

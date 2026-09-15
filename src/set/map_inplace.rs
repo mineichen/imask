@@ -127,7 +127,7 @@ impl<T> SortedRanges<T> {
     /// let ranges = SortedRanges::<u64>::try_from_span_iter(spans)?;
     ///
     /// let result = ranges.map_span_inplace(|source| {
-    ///     let extra = SortedRanges::from(Span::new(0..50, 1u32)).spans_owned();
+    ///     let extra = SortedRanges::<u64>::from(Span::new(0..50, 1)).spans_owned();
     ///     source.union(extra)
     /// }).expect("Non-empty");
     ///
@@ -281,7 +281,7 @@ mod tests {
 
         let result = ranges
             .map_span_inplace(|source| {
-                let extra = SortedRanges::from(Span::new(0u32..50, 2)).spans_owned();
+                let extra = SortedRanges::<u64>::from(Span::new(0..50, 2)).spans_owned();
                 source.union(extra)
             })
             .expect("Non-empty");
@@ -291,22 +291,22 @@ mod tests {
         assert_eq!(
             out_spans,
             vec![
-                Span::new(0..100, 0u64),
-                Span::new(0..100, 1u64),
-                Span::new(0..50, 2u64),
+                Span::new(0..100, 0),
+                Span::new(0..100, 1),
+                Span::new(0..50, 2),
             ]
         );
     }
 
     #[test]
     fn subtract_with_bounds_offset() {
-        let roi = Roi::new(1u32..101, 2u32..202);
+        let roi = Roi::new(1u32..101, 2..202);
         // Two rows, each full width, globally offset by (1, 2)
         let global_spans: Vec<Span<u64>> = vec![
-            Span::new(1u64..101, 2u64),
-            Span::new(1u64..101, 3u64),
-            Span::new(1u64..101, 4u64),
-            Span::new(1u64..101, 5u64),
+            Span::new(1..101, 2),
+            Span::new(1..101, 3),
+            Span::new(1..101, 4),
+            Span::new(1..101, 5),
         ];
 
         let ranges =
@@ -323,7 +323,7 @@ mod tests {
                     assert_eq!(Range::from(s.x), 1..101, "global x.start should be 1");
                     assert!(s.y >= 2, "global y should be >= 2 for bounds.y = 2");
                 });
-                let remove = SortedRanges::from(Span::new(1u32..101, 3)).spans_owned();
+                let remove = SortedRanges::<u64>::from(Span::new(1..101, 3)).spans_owned();
                 verified.with_roi(bounds).subtract(remove)
             })
             .expect("Non-empty");
@@ -334,9 +334,9 @@ mod tests {
         assert_eq!(
             out_spans,
             vec![
-                Span::new(1u64..101, 2u64),
-                Span::new(1u64..101, 4u64),
-                Span::new(1u64..101, 5u64),
+                Span::new(1..101, 2),
+                Span::new(1..101, 4),
+                Span::new(1..101, 5),
             ]
         );
     }
@@ -352,7 +352,7 @@ mod tests {
         // Remove half of the second row
         let result = ranges
             .map_span_inplace(|source| {
-                let remove = SortedRanges::from(Span::new(0u32..50, 1)).spans_owned();
+                let remove = SortedRanges::<u64>::from(Span::new(0..50, 1)).spans_owned();
                 source.subtract(remove)
             })
             .expect("Non-empty");
@@ -361,7 +361,7 @@ mod tests {
         let out_spans: Vec<_> = result.spans::<u64>().collect();
         assert_eq!(
             out_spans,
-            vec![Span::new(0..100, 0u64), Span::new(50..100, 1u64),]
+            vec![Span::new(0..100, 0), Span::new(50..100, 1),]
         );
     }
 
@@ -382,17 +382,17 @@ mod tests {
 
     #[test]
     fn map_span_inplace_bounds_update() {
-        let source_span = Span::new(10u32..100, 30);
-        let ranges = SortedRanges::from(source_span);
+        let source_span = Span::new(10..100, 30);
+        let ranges = SortedRanges::<u64>::from(source_span);
 
-        let mapped = Span::new(9u32..101, 40);
+        let mapped = Span::new(9..101, 40);
         let result = ranges
             .map_span_inplace(|source| {
                 assert_eq!(
                     vec![Span::<u64>::from(source_span)],
                     source.collect::<Vec<_>>()
                 );
-                SortedRanges::from(mapped).spans_owned()
+                SortedRanges::<u64>::from(mapped).spans_owned()
             })
             .unwrap()
             .spans_owned()
@@ -406,10 +406,10 @@ mod tests {
     }
     #[test]
     fn map_inplace_bounds_update() {
-        let source_span = Span::new(10u16..100, 30);
-        let ranges = SortedRanges::from(source_span);
+        let source_span = Span::new(10..100, 30);
+        let ranges = SortedRanges::<u32>::from(source_span);
 
-        let mapped = Span::new(9u32..101, 40);
+        let mapped = Span::new(9..101, 40);
         let result = ranges
             .map_inplace(|source| {
                 assert_eq!(
@@ -417,7 +417,7 @@ mod tests {
                     SortedRanges::from(source_span)
                 );
 
-                SortedRanges::from(mapped).iter_roi_owned()
+                SortedRanges::<u64>::from(mapped).iter_roi_owned()
             })
             .unwrap()
             .spans_owned()
@@ -432,9 +432,9 @@ mod tests {
 
     #[test]
     fn map_span_inplace_can_return_other_dimensions() {
-        let base = Roi::new(0u32..100, 0u32..100);
+        let base = Roi::new(0u32..100, 0..100);
         let ranges = SortedRanges::<u32>::try_from_span_iter(base.into_spans()).unwrap();
-        let expected = Roi::new(50u64..250, 50u64..150);
+        let expected = Roi::new(50u64..250, 50..150);
         let ranges = ranges
             .map_span_inplace(|_source| expected.into_spans())
             .expect("Should be non-empty");
@@ -461,7 +461,7 @@ mod tests {
         // Subtract middle portion of middle row — rows 0 and 2 must stay separate
         let result = ranges
             .map_span_inplace(|source| {
-                let remove = SortedRanges::from(Span::new(25u32..75, 1)).spans_owned();
+                let remove = SortedRanges::<u64>::from(Span::new(25..75, 1)).spans_owned();
                 source.subtract(remove)
             })
             .expect("Non-empty");
@@ -471,10 +471,10 @@ mod tests {
         assert_eq!(
             out_spans,
             vec![
-                Span::new(0..100, 0u64),
-                Span::new(0..25, 1u64),
-                Span::new(75..100, 1u64),
-                Span::new(0..100, 2u64),
+                Span::new(0..100, 0),
+                Span::new(0..25, 1),
+                Span::new(75..100, 1),
+                Span::new(0..100, 2),
             ]
         );
     }

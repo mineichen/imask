@@ -89,7 +89,7 @@ pub trait ImaskSet: IntoIterator + Sized {
     /// use imask::{Roi, ImaskSet, ImageDimension};
     ///
     /// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
-    /// let spans = Roi::new(10u32..20, 20u32..30).into_spans();
+    /// let spans = Roi::new(10u32..20, 20..30).into_spans();
     /// let mut count = 0;
     /// let mut inspect = spans.clone().fold_inline(0, |a, _r| {
     ///     *a += 1;
@@ -525,7 +525,7 @@ where
 /// use imask::{ImaskSet, Roi, SortedRanges, SortedRangesSpanBuilder, Span};
 ///
 /// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
-/// let roi = Roi::new(10u32..20, 10u32..20);
+/// let roi = Roi::new(10u32..20, 10..20);
 /// let mut builder = SortedRangesSpanBuilder::<u32>::new(roi);
 /// let mut iter = roi.into_spans().fold_inline(builder, |b, s| b.add(*s));
 /// iter.next();
@@ -569,12 +569,12 @@ where
     }
 }
 
-impl<T: SignedNonZeroable + Copy + Into<u32> + Sub<Output = T> + crate::number::Squareable>
-    From<Span<T>> for SortedRanges<T::Square>
+impl<T> From<Span<T::Sqrt>> for SortedRanges<T>
 where
-    Roi<T>: From<Span<T>>,
+    T: crate::number::Sqrtable,
+    T::Sqrt: SignedNonZeroable + Copy + Into<u32> + Sub<Output = T::Sqrt>,
 {
-    fn from(span: Span<T>) -> Self {
+    fn from(span: Span<T::Sqrt>) -> Self {
         let bounds = Roi {
             x: NonZeroRange::new_unchecked(span.x.start.into()..span.x.end.into()),
             y: NonZeroRange::new_unchecked(span.y.into()..span.y.into() + 1),
@@ -582,8 +582,8 @@ where
         #[allow(clippy::eq_op, reason = "Avoid additional bound on num_traits::Zero")]
         let zero = span.x.start - span.x.start;
         Self {
-            included: vec![T::Square::from(span.x.len())],
-            excluded: vec![T::Square::from(zero)],
+            included: vec![T::from(span.x.len())],
+            excluded: vec![T::from(zero)],
             bounds,
         }
     }
@@ -1072,11 +1072,25 @@ mod tests {
     fn ranges_from_span_roundtrip() {
         let x = NonZeroRange::from_span(15u32, NonZero::new(10).unwrap());
         let span = Span { y: 10u32, x };
-        let r = SortedRanges::from(span);
+        let r = SortedRanges::<u64>::from(span);
         let mut spans = r.spans::<u32>();
         let first = spans.next().expect("Has one");
         assert_eq!(None, spans.next(), "First {first:?}");
         assert_eq!(span, first);
+    }
+
+    #[test]
+    fn from_span_infers_span_type_from_destination() {
+        // No integer suffixes on the Span: `T::Sqrt` is inferred from the
+        // `SortedRanges<T>` turbofish, which the old `Squareable` direction
+        // could not do.
+        let r = SortedRanges::<u16>::from(Span::new(0..5, 0));
+        assert_eq!(Span::new(0..5, 0), r.spans::<u8>().next().unwrap());
+        let r = SortedRanges::<u64>::from(Span::new(0..10, 0));
+        assert_eq!(
+            Span::new(0..10, 0),
+            r.spans::<u32>().next().unwrap()
+        );
     }
 
     #[cfg(feature = "range-set-blaze-0_5")]
@@ -1110,16 +1124,16 @@ mod tests {
     #[test]
     fn ranges_starting_at_zero() {
         let map =
-            SortedRanges::<u32>::try_from_ordered_iter([0u64..1, 5u64..6].with_roi(TEST_BOUNDS));
+            SortedRanges::<u32>::try_from_ordered_iter([0u64..1, 5..6].with_roi(TEST_BOUNDS));
 
         let map = map.unwrap();
         let collected: Vec<_> = map.iter_roi::<std::ops::Range<u64>>().collect();
-        assert_eq!(vec![0u64..1, 5u64..6], collected);
+        assert_eq!(vec![0..1, 5..6], collected);
     }
 
     #[test]
     fn contains_point() -> TestResult {
-        let bounds = Roi::new(0u32..100, 0u32..100);
+        let bounds = Roi::new(0u32..100, 0..100);
         // row 0: x in 5..10, row 2: x in 5..10
         let ranges =
             SortedRanges::<u16>::try_from_ordered_iter([5u32..10, 205..210].with_roi(bounds))?;
@@ -1148,9 +1162,9 @@ mod tests {
 
     #[test]
     fn contains_single_span_wider_than_u8() {
-        // Regression: SortedRanges::from(Span::new(0u16..257, 0)).contains(0, 0)
+        // Regression: SortedRanges::<u32>::from(Span::new(0..257, 0)).contains(0, 0)
         // must be true.
-        let ranges = SortedRanges::from(Span::new(0u16..257, 0));
+        let ranges = SortedRanges::<u32>::from(Span::new(0..257, 0));
         assert!(ranges.contains(0u8, 0));
         // Last pixel of the span is still included (end exclusive).
         assert!(ranges.contains(256u16, 0));
@@ -1271,7 +1285,7 @@ mod tests {
 
     #[test]
     fn iter_global_with_different_widths() {
-        let rect = Roi::new(2u32..6, 1u32..4);
+        let rect = Roi::new(2u32..6, 1..4);
         let global_width = NonZero::new(10u32).unwrap();
         let ranges = SortedRanges::<u16>::try_from_ordered_iter(
             rect.into_rect_iter::<std::ops::Range<u32>>(global_width),
@@ -1297,7 +1311,7 @@ mod tests {
     }
     #[test]
     fn iter_global_with_different_widths_full_rect_width() {
-        let rect = Roi::new(0u32..10, 1u32..4);
+        let rect = Roi::new(0u32..10, 1..4);
         let global_width = NonZero::new(10u32).unwrap();
         let ranges = SortedRanges::<u16>::try_from_ordered_iter(
             rect.into_rect_iter::<std::ops::Range<u32>>(global_width),
@@ -1366,7 +1380,7 @@ mod tests {
 
     #[test]
     fn try_from_span_iter_overlapping_panics() {
-        let spans = vec![Span::new(0u32..500, 0u32), Span::new(0u32..500, 0u32)];
+        let spans = vec![Span::new(0u32..500, 0), Span::new(0u32..500, 0)];
         let result = SortedRanges::<u64>::try_from_span_iter(
             spans.with_bounds(TEST_BOUNDS.width(), TEST_BOUNDS.height()),
         );
@@ -1378,8 +1392,8 @@ mod tests {
 
     #[test]
     fn try_from_span_iter_preserves_bounds_offset() -> TestResult {
-        let bounds_with_offset = Roi::new(1u32..5, 1u32..5);
-        let spans = vec![Span::new(1u32..2, 1u32), Span::new(1u32..2, 2u32)];
+        let bounds_with_offset = Roi::new(1u32..5, 1..5);
+        let spans = vec![Span::new(1u32..2, 1), Span::new(1u32..2, 2)];
 
         let reconstructed =
             SortedRanges::<u32>::try_from_span_iter(spans.clone().with_roi(bounds_with_offset))?;
@@ -1391,12 +1405,12 @@ mod tests {
 
     #[test]
     fn span_roundtrip_with_offset_produces_global_spans() {
-        let roi = Roi::new(1u32..201, 2u32..102);
+        let roi = Roi::new(1u32..201, 2..102);
 
         let global_spans = vec![
-            Span::new(1u32..11, 2u32),
-            Span::new(1u32..11, 3u32),
-            Span::new(1u32..11, 4u32),
+            Span::new(1u32..11, 2),
+            Span::new(1u32..11, 3),
+            Span::new(1u32..11, 4),
         ];
 
         let sorted =
@@ -1410,7 +1424,7 @@ mod tests {
         let local_ranges: Vec<Range<u64>> = sorted.iter_roi().collect();
         assert_eq!(
             local_ranges,
-            vec![0u64..10, 200..210, 400..410],
+            vec![0..10, 200..210, 400..410],
             "iter_roi must produce LOCAL ranges (row 0, 1, 2 of the ROI), \
              not positions computed from global span y values"
         );
@@ -1418,7 +1432,7 @@ mod tests {
 
     #[test]
     fn iter_roi_is_local_but_spans_are_global_with_offset() {
-        let roi = Roi::new(5u32..55, 7u32..37);
+        let roi = Roi::new(5u32..55, 7..37);
         let sorted =
             SortedRanges::<u32>::try_from_ordered_iter(vec![0u64..10, 60..70].with_roi(roi))
                 .unwrap();
@@ -1444,14 +1458,14 @@ mod tests {
         const WIDTH: NonZeroU32 = NonZero::new(u16::MAX as u32).unwrap();
         const HEIGHT: NonZeroU32 = NonZero::new(2u32).unwrap();
         let spans = vec![
-            Span::new(0u16..u16::MAX, 0u16),
-            Span::new(0u16..u16::MAX, 1u16),
+            Span::new(0u16..u16::MAX, 0),
+            Span::new(0u16..u16::MAX, 1),
         ];
 
         let result = SortedRanges::<u64>::try_from_span_iter(spans.with_bounds(WIDTH, HEIGHT))?;
 
         let ranges: Vec<Range<u64>> = result.iter_roi().collect();
-        assert_eq!(vec![0u64..131070], ranges);
+        assert_eq!(vec![0..131070], ranges);
         Ok(())
     }
 
@@ -1459,12 +1473,12 @@ mod tests {
     fn from_span_iter_minbounds_height_too_big() -> TestResult {
         // Declared height (10) is much bigger than needed (2); x, y and width match.
         let declared = Roi::new(0u32..10, 0..10);
-        let spans = vec![Span::new(0u32..10, 0u32), Span::new(0u32..10, 1u32)];
+        let spans = vec![Span::new(0u32..10, 0), Span::new(0u32..10, 1)];
 
         let result =
             SortedRanges::<u32>::try_from_span_iter_minbounds(spans.clone().with_roi(declared))?;
 
-        let expected_bounds = Roi::new(0u32..10, 0u32..2);
+        let expected_bounds = Roi::new(0u32..10, 0..2);
         assert_eq!(expected_bounds, ImageDimension::roi(&result));
         assert_eq!(spans, result.spans().collect::<Vec<_>>());
 
@@ -1481,13 +1495,13 @@ mod tests {
     fn from_span_iter_minbounds_y_offset() -> TestResult {
         // Declared y (0) is smaller than actual min y (2); x/width match so only
         // the absolute start (offset * width) has to be shifted.
-        let declared = Roi::new(0u32..10, 0u32..10);
-        let spans = vec![Span::new(0u32..10, 2u32), Span::new(0u32..10, 3u32)];
+        let declared = Roi::new(0u32..10, 0..10);
+        let spans = vec![Span::new(0u32..10, 2), Span::new(0u32..10, 3)];
 
         let result =
             SortedRanges::<u32>::try_from_span_iter_minbounds(spans.clone().with_roi(declared))?;
 
-        let expected_bounds = Roi::new(0u32..10, 2u32..4);
+        let expected_bounds = Roi::new(0u32..10, 2..4);
         assert_eq!(expected_bounds, ImageDimension::roi(&result));
         assert_eq!(spans, result.spans().collect::<Vec<_>>());
 
@@ -1503,13 +1517,13 @@ mod tests {
     fn from_span_iter_minbounds_x_mismatch() -> TestResult {
         // Declared x/width (0/10) don't match actual (2/3): row stride changes,
         // so a full re-encode via into_spans().with_roi() is required.
-        let declared = Roi::new(0u32..10, 0u32..10);
-        let spans = vec![Span::new(2u32..5, 1u32), Span::new(2u32..5, 2u32)];
+        let declared = Roi::new(0u32..10, 0..10);
+        let spans = vec![Span::new(2u32..5, 1), Span::new(2u32..5, 2)];
 
         let result =
             SortedRanges::<u32>::try_from_span_iter_minbounds(spans.clone().with_roi(declared))?;
 
-        let expected_bounds = Roi::new(2u32..5, 1u32..3);
+        let expected_bounds = Roi::new(2u32..5, 1..3);
         assert_eq!(expected_bounds, ImageDimension::roi(&result));
         assert_eq!(spans, result.spans().collect::<Vec<_>>());
 

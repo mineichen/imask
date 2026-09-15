@@ -609,7 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn async_writer_stores_local_coordinates() {
-        let roi = Roi::new(1u32..101, 2u32..202);
+        let roi = Roi::new(1u32..101, 2..202);
         let mut buf = Vec::new();
         AsyncRangeWriter::new(
             &mut buf,
@@ -633,7 +633,7 @@ mod tests {
         use super::super::sync_io::SyncRangeWriter;
         use crate::SortedRanges;
 
-        let roi = Roi::new(1u32..101, 2u32..202);
+        let roi = Roi::new(1u32..101, 2..202);
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let local_ranges_roi = local_ranges.clone().with_roi(roi);
         let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi)?;
@@ -678,7 +678,7 @@ mod tests {
         use super::super::sync_io::SyncRangeWriter;
         use crate::SortedRanges;
 
-        let roi = Roi::new(1u32..101, 2u32..202);
+        let roi = Roi::new(1u32..101, 2..202);
         let local_ranges: Vec<RangeInclusive<u64>> = vec![10u64..=29, 45..=49, 205..=209];
         let local_ranges_roi = local_ranges.clone().with_roi(roi);
         let original = SortedRanges::<u64>::try_from_ordered_iter(local_ranges_roi)?;

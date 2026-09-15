@@ -195,64 +195,64 @@ mod tests {
 
     #[test]
     fn single_iterator() {
-        let span = Span::new(0u16..10, 0);
+        let span = Span::new(0..10, 0);
 
-        let iter = std::iter::once(SortedRanges::from(span));
+        let iter = std::iter::once(SortedRanges::<u32>::from(span));
         assert_eq!(
-            vec![Span::<u32>::from(span)],
+            vec![Span::from(span)],
             UnionAll::new(iter).unwrap().collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn two_non_overlapping() {
-        let a = SortedRanges::from(Span::new(0u8..5, 0));
-        let b = SortedRanges::from(Span::new(10u8..15, 0));
+        let a = SortedRanges::<u16>::from(Span::new(0..5, 0));
+        let b = SortedRanges::from(Span::new(10..15, 0));
         assert_eq!(
-            vec![Span::new(0..5, 0u16), Span::new(10..15, 0u16),],
+            vec![Span::new(0..5, 0), Span::new(10..15, 0),],
             UnionAll::new([a, b]).unwrap().collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn two_overlapping() {
-        let a = SortedRanges::from(Span::new(0u8..10, 0));
-        let b = SortedRanges::from(Span::new(5u8..15, 0));
+        let a = SortedRanges::<u16>::from(Span::new(0..10, 0));
+        let b = SortedRanges::from(Span::new(5..15, 0));
         assert_eq!(
-            vec![Span::new(0..15, 0u16)],
+            vec![Span::new(0..15, 0)],
             UnionAll::new([a, b]).unwrap().collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn three_overlapping() {
-        let a = SortedRanges::from(Span::new(0u8..5, 0));
-        let b = SortedRanges::from(Span::new(3u8..8, 0));
-        let c = SortedRanges::from(Span::new(6u8..12, 0));
+        let a = SortedRanges::<u16>::from(Span::new(0..5, 0));
+        let b = SortedRanges::from(Span::new(3..8, 0));
+        let c = SortedRanges::from(Span::new(6..12, 0));
         assert_eq!(
-            vec![Span::new(0..12, 0u16)],
+            vec![Span::new(0..12, 0)],
             UnionAll::new([a, b, c]).unwrap().collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn same_spans() {
-        let span = Span::new(0u8..10, 0);
-        let a = SortedRanges::from(span);
+        let span = Span::new(0..10, 0);
+        let a = SortedRanges::<u16>::from(span);
         let b = SortedRanges::from(span);
         assert_eq!(
-            vec![Span::<u16>::from(span)],
+            vec![Span::from(span)],
             UnionAll::new([a, b]).unwrap().collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn different_lines() {
-        let a = Span::new(0..10u16, 0);
-        let b = Span::new(0..10u16, 1);
+        let a = Span::new(0..10, 0);
+        let b = Span::new(0..10, 1);
         assert_eq!(
             [a, b].map(Span::<u32>::from).to_vec(),
-            UnionAll::new([SortedRanges::from(a), SortedRanges::from(b)])
+            UnionAll::new([SortedRanges::<u32>::from(a), SortedRanges::from(b)])
                 .unwrap()
                 .collect::<Vec<_>>()
         );
@@ -260,10 +260,10 @@ mod tests {
 
     #[test]
     fn some_empty_iterators() {
-        let a = Span::new(0..10u32, 0);
-        let c = Span::new(5..15u32, 0);
+        let a = Span::new(0..10, 0);
+        let c = Span::new(5..15, 0);
         assert_eq!(
-            vec![Span::new(0..15u32, 0)],
+            vec![Span::new(0..15, 0)],
             UnionAll::new([
                 vec!(a).with_roi(Roi::from(a)),
                 vec![].with_roi(Roi::from(a)),
@@ -279,17 +279,17 @@ mod tests {
         let a = SortedRanges::<u16>::try_from_span_iter(
             [Span::new(0..5, 0u16), Span::new(0..5, 1)].with_roi(BOUNDS),
         );
-        let b = SortedRanges::<u16>::try_from_span_iter(
+        let b = SortedRanges::try_from_span_iter(
             [Span::new(3..8, 0u16), Span::new(0..5, 2)].with_roi(BOUNDS),
         );
-        let c = SortedRanges::<u16>::try_from_span_iter(
+        let c = SortedRanges::try_from_span_iter(
             [Span::new(6..10, 0u16), Span::new(3..8, 1)].with_roi(BOUNDS),
         );
         assert_eq!(
             vec![
-                Span::new(0..10, 0u16),
-                Span::new(0..8, 1u16),
-                Span::new(0..5, 2u16),
+                Span::new(0..10, 0),
+                Span::new(0..8, 1),
+                Span::new(0..5, 2),
             ],
             UnionAll::new([a, b, c]).unwrap().collect::<Vec<_>>()
         );
@@ -297,10 +297,10 @@ mod tests {
 
     #[test]
     fn via_imaskset() {
-        let a = SortedRanges::from(Span::new(0u8..10, 0));
-        let b = SortedRanges::from(Span::new(5u8..15, 0));
+        let a = SortedRanges::<u16>::from(Span::new(0..10, 0));
+        let b = SortedRanges::from(Span::new(5..15, 0));
         assert_eq!(
-            vec![Span::new(0..15, 0u16)],
+            vec![Span::new(0..15, 0)],
             [
                 Result::<_, std::convert::Infallible>::Ok(a),
                 Result::<_, std::convert::Infallible>::Ok(b)
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn result_error_propagates() {
-        let item_ok = SortedRanges::from(Span::new(0u16..10, 0));
+        let item_ok = SortedRanges::<u32>::from(Span::new(0..10, 0));
         let item_err = PipelineError::from(u8::try_from(256).unwrap_err());
         let result = UnionAll::new([Ok(item_ok.into_iter()), Err(item_err)].with_roi(BOUNDS));
         assert!(matches!(result, Err(PipelineError::IncompatibleSize(_))));
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn superset_error_is_preserved() {
-        let item_ok = SortedRanges::from(Span::new(0u16..10, 0));
+        let item_ok = SortedRanges::<u32>::from(Span::new(0..10, 0));
         let iter: Result<_, SupersetError> = Ok(item_ok.into_iter());
         let result = UnionAll::new([iter, Err(SupersetError::SupersetOnly)].with_roi(BOUNDS));
         assert_eq!(result.err(), Some(SupersetError::SupersetOnly));
@@ -356,11 +356,11 @@ mod tests {
     #[test]
     fn superset_error_empty_is_skipped() {
         let item_err = SupersetError::from(PipelineError::Empty);
-        let item_ok = SortedRanges::from(Span::new(0u16..10, 0));
+        let item_ok = SortedRanges::<u32>::from(Span::new(0..10, 0));
         let result = UnionAll::new([Err(item_err), Ok(item_ok.into_iter())].with_roi(BOUNDS));
         assert_eq!(
             result.unwrap().collect::<Vec<_>>(),
-            vec![Span::new(0..10u32, 0)]
+            vec![Span::new(0..10, 0)]
         );
     }
 
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn pipeline_error_empty_is_skipped() {
-        let item_ok = SortedRanges::from(Span::new(0u16..10, 0));
+        let item_ok = SortedRanges::<u32>::from(Span::new(0..10, 0));
         let result = UnionAll::new([
             Err(PipelineError::Empty),
             Ok(item_ok.into_iter()),
@@ -386,14 +386,14 @@ mod tests {
         ]);
         assert_eq!(
             result.unwrap().collect::<Vec<_>>(),
-            vec![Span::new(0..10u32, 0)]
+            vec![Span::new(0..10, 0)]
         );
     }
 
     #[test]
     fn sorted_ranges_via_union_all_new() {
-        let a = SortedRanges::from(Span::new(0u16..10, 0));
-        let b = SortedRanges::from(Span::new(5u16..15, 0));
+        let a = SortedRanges::<u32>::from(Span::new(0..10, 0));
+        let b = SortedRanges::from(Span::new(5..15, 0));
         assert_eq!(
             vec![Span::new(0..15, 0)],
             UnionAll::new([a, b]).unwrap().collect::<Vec<_>>()
