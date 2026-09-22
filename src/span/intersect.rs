@@ -30,10 +30,12 @@ fn assert_sorted_and_disjoint<T: Ord + Copy + Debug>(last: &Option<Span<T>>, cur
 impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimension
     for Intersect<TA, TB>
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.roi
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.roi.width()
     }
@@ -79,6 +81,7 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let (Some(next_a), Some(next_b)) = (self.a.peek(), self.b.peek()) else {
@@ -159,6 +162,7 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (_, a_hi) = self.a.size_hint_total();
         let (_, b_hi) = self.b.size_hint_total();

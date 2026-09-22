@@ -36,10 +36,12 @@ impl<I> WithBounds<I> {
 impl<I: Iterator> Iterator for WithBounds<I> {
     type Item = I::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
@@ -61,12 +63,14 @@ impl<I: futures_core::Stream> futures_core::Stream for WithBounds<I> {
 impl<I: FusedIterator> FusedIterator for WithBounds<I> {}
 
 impl<I> ImageDimension for WithBounds<I> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         Roi {
             x: NonZeroRange::from_dimension(self.width),
             y: NonZeroRange::from_dimension(self.height),
         }
     }
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.width
     }

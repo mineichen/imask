@@ -121,6 +121,7 @@ where
 {
     type Item = TRange;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let x = self.parent.next()?;
         let start: TRange::Item = *x.start();
@@ -131,10 +132,12 @@ where
 }
 
 impl<'a, T: CreateRange<Item: range_set_blaze_0_5::Integer>> ImageDimension for DilateIter<'a, T> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
+    #[inline]
     fn width(&self) -> NonZeroU32 {
         self.bounds.width()
     }
@@ -157,6 +160,7 @@ where
 {
     type Item = TIter::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.parent.next()?;
         let start = item.start();

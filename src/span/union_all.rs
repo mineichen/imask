@@ -77,10 +77,12 @@ impl<I: Iterator<Item: Ord>> UnionAll<I> {
 }
 
 impl<I: Iterator> ImageDimension for UnionAll<I> {
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.roi
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.roi.width()
     }
@@ -93,6 +95,7 @@ where
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Span<T>> {
         loop {
             let item = match self.heap.peek_mut() {
@@ -129,6 +132,7 @@ where
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let accumulator = self.accumulator.is_some() as usize;
         let mut lo = accumulator;
@@ -152,6 +156,7 @@ struct PendingIter<I: Iterator> {
 }
 
 impl<I: Iterator<Item: Ord>> PartialEq for PendingIter<I> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.pending == other.pending
     }
@@ -160,12 +165,14 @@ impl<I: Iterator<Item: Ord>> PartialEq for PendingIter<I> {
 impl<I: Iterator<Item: Ord>> Eq for PendingIter<I> {}
 
 impl<I: Iterator<Item: Ord>> PartialOrd for PendingIter<I> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<I: Iterator<Item: Ord>> Ord for PendingIter<I> {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.pending, &other.pending) {
             (None, None) => Ordering::Equal,

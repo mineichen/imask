@@ -5,6 +5,7 @@ use std::num::NonZero;
 
 use crate::{CreateRange, UncheckedCast};
 
+#[inline]
 fn byte_is_nonzero(b: &u8) -> bool {
     *b != 0
 }
@@ -59,6 +60,7 @@ where
         ))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (_, hi) = self.iter.size_hint();
         (0, hi)

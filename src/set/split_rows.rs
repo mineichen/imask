@@ -43,6 +43,7 @@ where
 {
     type Item = R;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let width: R::Item = self.width().get().cast_unchecked();
 
@@ -64,6 +65,7 @@ where
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (lo, _) = self.parent.size_hint();
         let pending = self.pending.is_some() as usize;

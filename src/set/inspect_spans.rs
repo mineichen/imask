@@ -30,10 +30,12 @@ impl<I, F> InspectSpans<I, F> {
 impl<I: Iterator, F: FnMut(&I::Item)> Iterator for InspectSpans<I, F> {
     type Item = I::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().inspect(|item| (self.f)(item))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
@@ -57,10 +59,12 @@ impl<I: futures_core::Stream, F: FnMut(&I::Item)> futures_core::Stream for Inspe
 impl<I: FusedIterator, F: FnMut(&I::Item)> FusedIterator for InspectSpans<I, F> {}
 
 impl<I: ImageDimension, F> ImageDimension for InspectSpans<I, F> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.inner.roi()
     }
 
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.inner.width()
     }

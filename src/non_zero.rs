@@ -20,6 +20,7 @@ pub struct NonZeroRange<T>(RangeUnchecked<T>);
 macro_rules! impl_into {
     ($src:ty, $dst:ty) => {
         impl From<NonZeroRange<$src>> for NonZeroRange<$dst> {
+            #[inline]
             fn from(value: NonZeroRange<$src>) -> Self {
                 Self(RangeUnchecked {
                     start: value.0.start.into(),
@@ -100,6 +101,7 @@ pub struct RangeUnchecked<T> {
 impl<T: Debug + PartialOrd> TryFrom<RangeUnchecked<T>> for NonZeroRange<T> {
     type Error = RangeZeroLenghtError<RangeUnchecked<T>>;
 
+    #[inline]
     fn try_from(value: RangeUnchecked<T>) -> Result<Self, Self::Error> {
         if value.start < value.end {
             Ok(Self(value))
@@ -110,6 +112,7 @@ impl<T: Debug + PartialOrd> TryFrom<RangeUnchecked<T>> for NonZeroRange<T> {
 }
 
 impl NonZeroRange<u64> {
+    #[inline]
     pub fn with_offset(&self, offset: i64) -> Self {
         NonZeroRange(RangeUnchecked {
             start: self.0.start.checked_add_signed(offset).expect("Overflow"),
@@ -117,12 +120,14 @@ impl NonZeroRange<u64> {
         })
     }
 
+    #[inline]
     pub fn increment_length(&mut self) {
         self.0.end = self.0.end.checked_add(1).expect("Never overflows");
     }
 }
 
 impl<T> From<NonZeroRange<T>> for std::ops::Range<T> {
+    #[inline]
     fn from(value: NonZeroRange<T>) -> Self {
         value.0.start..value.0.end
     }
@@ -130,6 +135,7 @@ impl<T> From<NonZeroRange<T>> for std::ops::Range<T> {
 impl<T: PartialOrd> TryFrom<std::ops::Range<T>> for NonZeroRange<T> {
     type Error = RangeZeroLenghtError<std::ops::Range<T>>;
 
+    #[inline]
     fn try_from(value: std::ops::Range<T>) -> Result<Self, Self::Error> {
         if value.is_empty() {
             Err(RangeZeroLenghtError(value))
@@ -143,6 +149,7 @@ impl<T: PartialOrd> TryFrom<std::ops::Range<T>> for NonZeroRange<T> {
 }
 
 impl<T: Sub<Output = T> + One> From<NonZeroRange<T>> for std::ops::RangeInclusive<T> {
+    #[inline]
     fn from(value: NonZeroRange<T>) -> Self {
         value.0.start..=value.0.end - T::one()
     }
@@ -152,6 +159,7 @@ impl<T: PartialOrd + Add<Output = T> + One> TryFrom<std::ops::RangeInclusive<T>>
 {
     type Error = RangeZeroLenghtError<RangeInclusive<T>>;
 
+    #[inline]
     fn try_from(value: std::ops::RangeInclusive<T>) -> Result<Self, Self::Error> {
         if value.is_empty() {
             Err(RangeZeroLenghtError(value))
@@ -192,6 +200,7 @@ impl SignedNonZeroable for u8 {
         unsafe { NonZero::new_unchecked(self) }
     }
 
+    #[inline]
     fn iter_steps(self, steps: Self::NonZero) -> impl Iterator<Item = Self> {
         self..self + steps.get()
     }
@@ -213,6 +222,7 @@ impl SignedNonZeroable for u16 {
     unsafe fn create_non_zero_unchecked(self) -> Self::NonZero {
         unsafe { NonZero::new_unchecked(self) }
     }
+    #[inline]
     fn iter_steps(self, steps: Self::NonZero) -> impl Iterator<Item = Self> {
         self..self + steps.get()
     }
@@ -234,6 +244,7 @@ impl SignedNonZeroable for u32 {
     unsafe fn create_non_zero_unchecked(self) -> Self::NonZero {
         unsafe { NonZero::new_unchecked(self) }
     }
+    #[inline]
     fn iter_steps(self, steps: Self::NonZero) -> impl Iterator<Item = Self> {
         self..self + steps.get()
     }
@@ -255,6 +266,7 @@ impl SignedNonZeroable for u64 {
     unsafe fn create_non_zero_unchecked(self) -> Self::NonZero {
         unsafe { NonZero::new_unchecked(self) }
     }
+    #[inline]
     fn iter_steps(self, steps: Self::NonZero) -> impl Iterator<Item = Self> {
         self..self + steps.get()
     }
@@ -277,12 +289,14 @@ impl SignedNonZeroable for usize {
     unsafe fn create_non_zero_unchecked(self) -> Self::NonZero {
         unsafe { NonZero::new_unchecked(self) }
     }
+    #[inline]
     fn iter_steps(self, steps: Self::NonZero) -> impl Iterator<Item = Self> {
         self..self + steps.get()
     }
 }
 
 impl<T> From<Range<T>> for RangeUnchecked<T> {
+    #[inline]
     fn from(value: Range<T>) -> Self {
         RangeUnchecked {
             start: value.start,
@@ -292,6 +306,7 @@ impl<T> From<Range<T>> for RangeUnchecked<T> {
 }
 
 impl<T: One + Sub<Output = T> + Add<Output = T>> From<RangeInclusive<T>> for RangeUnchecked<T> {
+    #[inline]
     fn from(value: RangeInclusive<T>) -> Self {
         let (start, end) = value.into_inner();
         RangeUnchecked {
@@ -314,6 +329,7 @@ impl<T> NonZeroRange<T> {
 
 impl<T: Ord + Debug> NonZeroRange<T> {
     // CreateRange helps for type inference propagation, as it's a Assoc type rather than a Trait-Generic
+    #[inline]
     pub fn new<TSrc: CreateRange<Item = T> + TryInto<NonZeroRange<T>, Error: Debug>>(
         into_range: TSrc,
     ) -> Self {
@@ -323,6 +339,7 @@ impl<T: Ord + Debug> NonZeroRange<T> {
     }
     /// # Safety
     /// range.start has to be < range.end
+    #[inline]
     pub fn new_unchecked(into_range: impl Into<RangeUnchecked<T>>) -> Self {
         let r = Self(into_range.into());
         debug_assert!(
@@ -332,6 +349,7 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         );
         r
     }
+    #[inline]
     pub fn from_dimension(x: T::NonZero) -> Self
     where
         T: SignedNonZeroable + Zero,
@@ -341,6 +359,7 @@ impl<T: Ord + Debug> NonZeroRange<T> {
             end: x.into(),
         })
     }
+    #[inline]
     pub fn union(&self, other: &Self) -> Self
     where
         T: Copy,
@@ -349,6 +368,7 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         let end = max(self.end, other.end);
         Self::new_unchecked(RangeUnchecked { start, end })
     }
+    #[inline]
     pub fn intersection(&self, other: &Self) -> Option<Self>
     where
         T: Copy,
@@ -362,6 +382,7 @@ impl<T: Ord + Debug> NonZeroRange<T> {
         }
     }
 
+    #[inline]
     pub fn try_cast<TNew: Debug + Ord + TryFrom<T>>(
         self,
     ) -> Result<NonZeroRange<TNew>, TNew::Error> {
@@ -373,9 +394,11 @@ impl<T: Ord + Debug> NonZeroRange<T> {
     }
 }
 impl<T: Ord> NonZeroRange<T> {
+    #[inline]
     pub fn contains(&self, other: &T) -> bool {
         &self.0.start <= other && &self.0.end > other
     }
+    #[inline]
     pub fn overlaps(&self, other: &Self) -> bool {
         self.start < other.end && other.start < self.end
     }
@@ -384,10 +407,12 @@ impl<T> NonZeroRange<T>
 where
     T: Sub<Output = T> + Copy,
 {
+    #[inline]
     pub fn len(&self) -> T {
         self.end - self.start
     }
 
+    #[inline]
     pub fn len_non_zero(&self) -> T::NonZero
     where
         T: SignedNonZeroable,
@@ -401,6 +426,7 @@ where
 impl<T: Add<Output = T> + Copy> Add<T> for NonZeroRange<T> {
     type Output = NonZeroRange<T>;
 
+    #[inline]
     fn add(self, rhs: T) -> Self::Output {
         NonZeroRange(RangeUnchecked {
             start: self.start + rhs,
@@ -412,6 +438,7 @@ impl<T: Add<Output = T> + Copy> Add<T> for NonZeroRange<T> {
 impl<T: Sub<Output = T> + Copy> Sub<T> for NonZeroRange<T> {
     type Output = NonZeroRange<T>;
 
+    #[inline]
     fn sub(self, rhs: T) -> Self::Output {
         NonZeroRange(RangeUnchecked {
             start: self.start - rhs,
@@ -423,6 +450,7 @@ impl<T: Sub<Output = T> + Copy> Sub<T> for NonZeroRange<T> {
 impl<T> Deref for NonZeroRange<T> {
     type Target = RangeUnchecked<T>;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }

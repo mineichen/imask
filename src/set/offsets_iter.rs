@@ -26,6 +26,7 @@ where
 {
     type Item = (TExcluded, TIncluded);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let range = self.iter.next()?;
         let (start, end) = range.into_inner();
@@ -54,6 +55,7 @@ where
         Some((excluded, included))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
@@ -63,10 +65,12 @@ impl<TIter, TIncluded, TExcluded> ImageDimension for RangeToOffsetsIter<TIter, T
 where
     TIter: ImageDimension,
 {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.iter.width()
     }
 
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.iter.roi()
     }

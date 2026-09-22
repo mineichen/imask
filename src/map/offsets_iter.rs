@@ -25,6 +25,7 @@ where
 {
     type Item = (TExcluded, TIncluded, TMeta);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (range, meta) = self.iter.next()?;
         let (start, end) = range.into_inner();
@@ -36,6 +37,7 @@ where
         Some((excluded, included, meta))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }

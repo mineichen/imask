@@ -42,6 +42,7 @@ where
         }
     }
 
+    #[inline]
     pub(crate) fn declared_bounds(&self) -> Roi<u32> {
         self.bounds
     }

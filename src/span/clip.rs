@@ -53,10 +53,12 @@ where
 }
 
 impl<TIter: ImageDimension, T: SignedNonZeroable> ImageDimension for ClipSpanIter<TIter, T> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.output_bounds
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.output_bounds.width()
     }
@@ -67,6 +69,7 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let span = self.pending.take()?;
@@ -84,6 +87,7 @@ impl<TIter: Iterator<Item = Span<T>>, T: SignedNonZeroable + Ord + Debug + Add<O
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         // todo: Can be improved: If parent is inbound, parent bounds can be returned
         let (_, hi) = self.parent.size_hint();

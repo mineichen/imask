@@ -60,18 +60,22 @@ fn quad_corners(matrix: &Matrix3<f64>, col: u64, row: u64, w: u64) -> [(f64, f64
 const FP_SHIFT: u32 = 8;
 const FP_SCALE: i32 = 1i32 << FP_SHIFT;
 
+#[inline]
 fn to_fp(f: f64) -> i32 {
     (f * FP_SCALE as f64).round() as i32
 }
 
+#[inline]
 fn fp_floor(v: i32) -> i32 {
     v >> FP_SHIFT
 }
 
+#[inline]
 fn fp_ceil(v: i32) -> i32 {
     (v + FP_SCALE - 1) >> FP_SHIFT
 }
 
+#[inline]
 fn floor_div_i64(a: i64, b: i64) -> i64 {
     let d = a / b;
     let r = a % b;
@@ -171,10 +175,12 @@ impl QuadSpanIter {
         iter
     }
 
+    #[inline]
     fn exhausted(&self) -> bool {
         self.row_y > self.row_y_end
     }
 
+    #[inline]
     fn remaining(&self) -> usize {
         if self.exhausted() {
             0
@@ -183,6 +189,7 @@ impl QuadSpanIter {
         }
     }
 
+    #[inline]
     fn current(&self) -> Span<u32> {
         debug_assert!(!self.exhausted());
         let cs = self.x_left.max(0) as u32;
@@ -256,6 +263,7 @@ struct HeapEntry {
 }
 
 impl PartialEq for HeapEntry {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.iter.row_y == other.iter.row_y && self.iter.x_left == other.iter.x_left
     }
@@ -264,12 +272,14 @@ impl PartialEq for HeapEntry {
 impl Eq for HeapEntry {}
 
 impl PartialOrd for HeapEntry {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for HeapEntry {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         match other.iter.row_y.cmp(&self.iter.row_y) {
             Ordering::Equal => other.iter.x_left.cmp(&self.iter.x_left),
@@ -328,10 +338,12 @@ impl AffineTransformHeap {
 }
 
 impl ImageDimension for AffineTransformHeap {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.bounds.width()
     }
@@ -340,6 +352,7 @@ impl ImageDimension for AffineTransformHeap {
 impl Iterator for AffineTransformHeap {
     type Item = Span<u32>;
 
+    #[inline]
     fn next(&mut self) -> Option<Span<u32>> {
         let first = self.pending.take().or_else(|| self.pop_span())?;
         let y = first.y;
@@ -364,6 +377,7 @@ impl Iterator for AffineTransformHeap {
         })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let pending = self.pending.is_some() as usize;
         let mut total = pending;

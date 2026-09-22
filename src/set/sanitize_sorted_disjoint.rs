@@ -114,6 +114,7 @@ impl<I: Iterator<Item: CreateRange<Item: Debug + num_traits::Unsigned + Ord + Co
 {
     type Item = I::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let mut iter = (&mut self.iter).map(|x| {
             let (start, end) = (x.start(), x.end());
@@ -175,6 +176,7 @@ impl<I: Iterator<Item: CreateRange<Item: Debug + num_traits::Unsigned + Ord + Co
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         if matches!(self.state, SanitizeSortedDisjointState::Error(_)) {
             return (0, Some(0));
@@ -197,10 +199,12 @@ impl<I> ImageDimension for SanitizeSortedDisjoint<I>
 where
     I: Iterator<Item: CreateRange<Item: Debug>> + crate::ImageDimension,
 {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.iter.width()
     }
 
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.iter.roi()
     }

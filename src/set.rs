@@ -592,11 +592,13 @@ impl<T> SortedRanges<T> {
 
     /// Returns the number of ranges
     #[allow(clippy::len_without_is_empty, reason = "Cannot be empty")]
+    #[inline]
     pub fn len(&self) -> usize {
         self.included.len()
     }
 
     // Returns the number of ranges
+    #[inline]
     pub fn len_nonzero(&self) -> NonZero<usize> {
         NonZero::new(self.included.len())
             .expect("Constructors make sure, there is always at least one Range")
@@ -788,9 +790,11 @@ impl<T> SortedRanges<T> {
 }
 
 impl<T> ImageDimension for SortedRanges<T> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.bounds.width()
     }

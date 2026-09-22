@@ -46,12 +46,14 @@ where
 {
     type Item = I::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.parent
             .next()
             .inspect(|item| (self.f)(&mut self.accumulator, item))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.parent.size_hint()
     }
@@ -69,10 +71,12 @@ where
     I: ImageDimension + Iterator,
     F: FnMut(&mut A, &I::Item),
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.parent.roi()
     }
 
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.parent.width()
     }

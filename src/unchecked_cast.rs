@@ -29,6 +29,7 @@ macro_rules! impl_debug_checked_cast {
                 self as _
             }
 
+            #[inline]
             fn cast_saturating(self) -> $dst {
                 if const { core::mem::size_of::<$src>() > core::mem::size_of::<$dst>() } {
                     (<$dst>::MAX as Self).min(self) as _

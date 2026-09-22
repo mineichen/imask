@@ -104,6 +104,7 @@ where
 {
     type Item = (RangeInclusive<u64>, TMeta);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let mut x = self.cell.borrow_mut();
         let (col, read_pos) = &mut *x;
@@ -126,6 +127,7 @@ where
         Some((out_range, meta))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let read_pos = self.cell.borrow().1;
         let remaining = self.original_len.saturating_sub(read_pos);

@@ -158,10 +158,12 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
     }
 
     #[allow(clippy::len_without_is_empty, reason = "is_empty would always be true")]
+    #[inline]
     pub fn len(&self) -> usize {
         self.included.len()
     }
 
+    #[inline]
     pub fn len_nonzero(&self) -> NonZero<usize> {
         NonZero::new(self.included.len())
             .expect("Constructors make sure, there is always at least one Range")
@@ -240,10 +242,12 @@ impl<TIncluded, TExcluded, TMeta> SortedRangesMap<TIncluded, TExcluded, Vec<TMet
 }
 
 impl<TIncluded, TExcluded, TMeta> ImageDimension for SortedRangesMap<TIncluded, TExcluded, TMeta> {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.bounds.width()
     }
 
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
@@ -277,6 +281,7 @@ pub struct MetaRange<TRange, TMeta> {
 }
 
 impl<TRange, TMeta> From<(TRange, TMeta)> for MetaRange<TRange, TMeta> {
+    #[inline]
     fn from((range, meta): (TRange, TMeta)) -> Self {
         Self { range, meta }
     }

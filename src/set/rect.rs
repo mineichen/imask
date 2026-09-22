@@ -25,11 +25,13 @@ pub enum RectIteratorKind<R: CreateRange<Item: SignedNonZeroable>> {
 impl<R: CreateRange<Item: SignedNonZeroable + TryInto<u32, Error: Debug>>> ImageDimension
     for RectIterator<R>
 {
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         NonZero::new(self.width.into().try_into().expect("width < u32::MAX"))
             .expect("self.width is NonZero")
     }
 
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         let height = NonZeroU32::new(self.height.into().try_into().expect("height < u32::MAX"))
             .expect("self.width is NonZero");
@@ -93,10 +95,12 @@ where
 {
     type Item = R;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.kind.next()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.kind.size_hint()
     }
@@ -107,6 +111,7 @@ where
 {
     type Item = R;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::FullWidth(x) => x.next(),
@@ -114,6 +119,7 @@ where
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
             Self::FullWidth(x) => x.size_hint(),
@@ -170,6 +176,7 @@ where
 {
     type Item = R;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.start_index < self.end_index {
             let r = R::new_debug_checked(self.start_index, self.width);
@@ -180,6 +187,7 @@ where
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remain = usize::from(self.start_index < self.end_index);
         (remain, Some(remain))

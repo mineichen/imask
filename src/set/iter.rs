@@ -31,10 +31,12 @@ impl<TIncludedIter, TExcludedIter, TRange: CreateRange>
 impl<TIncludedIter, TExcludedIter, TOut: CreateRange> ImageDimension
     for SortedRangesIter<TIncludedIter, TExcludedIter, TOut>
 {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.roi.width()
     }
 
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.roi
     }
@@ -48,6 +50,7 @@ where
 {
     type Item = TOut;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let exclude = self.excluded.next()?.cast_unchecked();
         self.accumulator = self.accumulator + exclude;
@@ -60,6 +63,7 @@ where
         Some(out_range)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.excluded.size_hint()
     }

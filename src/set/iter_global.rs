@@ -57,10 +57,12 @@ where
 }
 
 impl<I, E, T: CreateRange> ImageDimension for SortedRangesIterGlobal<I, E, T> {
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.new_width
     }
 
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         crate::Roi {
             x: NonZeroRange::from_dimension(self.new_width),
@@ -87,6 +89,7 @@ where
 {
     type Item = TOut;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let zero = TOut::Item::default();
         if self.remaining > zero {
@@ -142,6 +145,7 @@ where
         })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let zero = TOut::Item::default();
         let has_remaining = self.remaining > zero;

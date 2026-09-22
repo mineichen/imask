@@ -53,6 +53,7 @@ pub struct Span<T> {
 macro_rules! impl_into {
     ($src:ty, $dst:ty) => {
         impl From<Span<$src>> for Span<$dst> {
+            #[inline]
             fn from(value: Span<$src>) -> Self {
                 Self {
                     x: value.x.into(),
@@ -97,6 +98,7 @@ where
 impl<T: Debug + Ord + Copy> Span<T> {
     /// Panics: When `TryInto<NonZeroRange<T>>::try_into` fails. If a `NonZeroRange<T>` is provided, this method doesn't do any validation
     // CreateRange-Bound allows better type inference because it's a Assoc-Type, while `TryInto` is a generic trait param
+    #[inline]
     pub fn new<TSrc: CreateRange<Item = T> + TryInto<NonZeroRange<T>, Error: Debug>>(
         x: TSrc,
         y: T,
@@ -143,6 +145,7 @@ impl<TParent: Iterator<Item: CreateRange> + ImageDimension> ImageDimension
 where
     u32: TryInto<<TParent::Item as CreateRange>::Item, Error: Debug>,
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         let bounds = self.parent.roi();
         #[cfg(debug_assertions)]
@@ -157,6 +160,7 @@ where
         bounds
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         let width = self.parent.width();
         #[cfg(debug_assertions)]
@@ -189,6 +193,7 @@ where
 {
     type Item = Span<<TParent::Item as CreateRange>::Item>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let range = self.pending.take().or_else(|| {
             self.parent
@@ -217,6 +222,7 @@ where
         Some(Span { x, y: global_y })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (lo, _) = self.parent.size_hint();
         let pending = self.pending.is_some() as usize;

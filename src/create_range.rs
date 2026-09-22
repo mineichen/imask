@@ -45,9 +45,11 @@ impl<
         start..=end
     }
 
+    #[inline]
     fn start(&self) -> Self::Item {
         *std::ops::RangeInclusive::start(self)
     }
+    #[inline]
     fn end(&self) -> Self::Item {
         *std::ops::RangeInclusive::end(self) + T::one()
     }
@@ -73,9 +75,11 @@ impl<T: SignedNonZeroable + PartialOrd + Copy + Add<Output = T>> CreateRange
         start..end
     }
 
+    #[inline]
     fn start(&self) -> Self::Item {
         self.start
     }
+    #[inline]
     fn end(&self) -> Self::Item {
         self.end
     }
@@ -98,9 +102,11 @@ impl<T: Copy + Debug + Ord> CreateRange for NonZeroRange<T> {
     {
         NonZeroRange::from_span(start, len)
     }
+    #[inline]
     fn start(&self) -> Self::Item {
         self.start
     }
+    #[inline]
     fn end(&self) -> Self::Item {
         self.end
     }

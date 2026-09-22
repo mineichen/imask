@@ -5,6 +5,7 @@ use std::num::NonZero;
 
 use crate::{CreateRange, ImageDimension, NonZeroRange, Span, UncheckedCast};
 
+#[inline]
 fn byte_is_nonzero(b: &u8) -> bool {
     *b != 0
 }
@@ -29,6 +30,7 @@ impl<I: Iterator, TOut> BitmapToSpanIter<I, TOut> {
 }
 
 impl<I, TOut> ImageDimension for BitmapToSpanIter<I, TOut> {
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         crate::Roi {
             x: NonZeroRange::from_dimension(self.width),
@@ -36,6 +38,7 @@ impl<I, TOut> ImageDimension for BitmapToSpanIter<I, TOut> {
         }
     }
 
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.width
     }
@@ -91,6 +94,7 @@ where
         })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (_, hi) = self.iter.size_hint();
         (0, hi)

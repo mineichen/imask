@@ -102,6 +102,7 @@ where
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Span<T>> {
         loop {
             let span = self.inner.next()?;
@@ -119,6 +120,7 @@ where
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (lo, hi) = self.inner.size_hint();
         (lo, hi)
@@ -130,10 +132,12 @@ where
     I: Iterator<Item = Span<T>> + ImageDimension,
     T: Ord + Copy + Debug + Add<Output = T> + SaturatingSub<Output = T> + CheckedAddSigned,
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.bounds.width()
     }
@@ -151,6 +155,7 @@ where
     I: ImageDimension + Iterator<Item = Span<T>>,
     T: Copy + Add<Output = T> + UncheckedCast<u32> + SignedNonZeroable,
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         let parent_bounds = self.parent.roi();
         let x_offset = self.x_offset.cast_unchecked();
@@ -167,6 +172,7 @@ where
         }
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.roi().width()
     }
@@ -179,6 +185,7 @@ where
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Span<T>> {
         let span = self.parent.next()?;
         Some(Span {
@@ -190,6 +197,7 @@ where
         })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.parent.size_hint()
     }
@@ -568,6 +576,7 @@ where
 }
 
 /// Relative coverage indices `[a, b)` of an already clipped and dilated range.
+#[inline]
 fn coverage_indices<T: UncheckedCast<u32>>(range: &Range<T>) -> (usize, usize) {
     (
         UncheckedCast::<u32>::cast_unchecked(range.start) as usize,
@@ -601,6 +610,7 @@ where
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Span<T>> {
         loop {
             let rel = self.coverage[self.cursor..self.row_b]
@@ -628,16 +638,19 @@ where
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
     }
 }
 
 impl<I, T, S> ImageDimension for DilateSpanIterAcc<I, T, S> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.bounds.width()
     }

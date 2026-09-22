@@ -41,6 +41,7 @@ where
 {
     type Item = TRange::ListItem<TMeta::Item>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let exclude = self.excluded.next()?.cast_unchecked();
         self.offset = self.offset + exclude;
@@ -59,6 +60,7 @@ where
         Some((out_range, meta).into())
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.excluded.size_hint()
     }

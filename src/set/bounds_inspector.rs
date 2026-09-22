@@ -83,6 +83,7 @@ where
 {
     type Item = R;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.parent.next()?;
 
@@ -112,6 +113,7 @@ where
         Some(item)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.parent.size_hint()
     }
@@ -129,9 +131,11 @@ where
     T: Iterator + ImageDimension,
     R: CreateRange,
 {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.parent.width()
     }
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.parent.roi()
     }

@@ -10,10 +10,12 @@ pub struct Subtract<TA: Iterator, TB: Iterator> {
 }
 
 impl<TA: Iterator + ImageDimension, TB: Iterator> ImageDimension for Subtract<TA, TB> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.a.parent.roi()
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.a.parent.width()
     }
@@ -44,6 +46,7 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let mut cur = self.a.pending.take()?;
         let r = match self.b.pending.take() {
@@ -98,6 +101,7 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
         Some(r)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         // todo: Depends on bounds
         let (_, hi) = self.a.size_hint_total();

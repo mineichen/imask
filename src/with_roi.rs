@@ -33,10 +33,12 @@ impl<I> WithRoi<I> {
 impl<I: Iterator> Iterator for WithRoi<I> {
     type Item = I::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
@@ -58,9 +60,11 @@ impl<I: futures_core::Stream> futures_core::Stream for WithRoi<I> {
 impl<I: FusedIterator> FusedIterator for WithRoi<I> {}
 
 impl<I> ImageDimension for WithRoi<I> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.roi
     }
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.roi.width()
     }

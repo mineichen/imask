@@ -11,6 +11,7 @@ pub struct Union<TA: Iterator, TB: Iterator> {
 impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimension
     for Union<TA, TB>
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         let a_bounds = self.a.parent.roi();
         let b_bounds = self.b.parent.roi();
@@ -27,6 +28,7 @@ impl<TA: Iterator + ImageDimension, TB: Iterator + ImageDimension> ImageDimensio
         a_bounds.union(&b_bounds)
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.roi().width()
     }
@@ -93,6 +95,7 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match (self.a.peek(), self.b.peek()) {
             (None, None) => None,
@@ -108,6 +111,7 @@ impl<TA: Iterator<Item = Span<T>>, TB: Iterator<Item = Span<T>>, T: Ord + Copy +
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (a_lo, a_hi) = self.a.size_hint_total();
         let (b_lo, b_hi) = self.b.size_hint_total();

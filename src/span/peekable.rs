@@ -8,21 +8,25 @@ pub(crate) struct Peekable<I: Iterator> {
 }
 
 impl<I: Iterator> Peekable<I> {
+    #[inline]
     pub(crate) fn new(mut parent: I) -> Self {
         let pending = parent.next();
         Self { parent, pending }
     }
 
+    #[inline]
     pub(crate) fn next(&mut self) -> Option<I::Item> {
         let current = self.pending.take()?;
         self.pending = self.parent.next();
         Some(current)
     }
 
+    #[inline]
     pub(crate) fn peek(&self) -> Option<&I::Item> {
         self.pending.as_ref()
     }
 
+    #[inline]
     pub(crate) fn size_hint_total(&self) -> (usize, Option<usize>) {
         let (lo, hi) = self.parent.size_hint();
         let extra = usize::from(self.pending.is_some());
@@ -45,6 +49,7 @@ mod tests {
 
     impl<I: Iterator> Iterator for Unfused<I> {
         type Item = I::Item;
+        #[inline]
         fn next(&mut self) -> Option<I::Item> {
             assert!(!self.done, "polled after None");
             let item = self.inner.next();

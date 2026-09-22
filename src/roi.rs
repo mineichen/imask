@@ -33,6 +33,7 @@ where
 impl<T: SignedNonZeroable> Roi<T> {
     /// Panics: When `TryInto<NonZeroRange<T>>::try_into` fails. If a `NonZeroRange<T>` is provided, this method doesn't do any validation
     // CreateRange-Bound allows better type inference because it's a Assoc-Type, while `TryInto` is a generic trait param
+    #[inline]
     pub fn new<TNew: CreateRange<Item = T> + TryInto<NonZeroRange<T>, Error: Debug>>(
         x: TNew,
         y: TNew,
@@ -42,6 +43,7 @@ impl<T: SignedNonZeroable> Roi<T> {
         Self { x, y }
     }
 
+    #[inline]
     pub fn from_dimensions(width: T::NonZero, height: T::NonZero) -> Self
     where
         T: SignedNonZeroable + Zero + Copy,
@@ -58,6 +60,7 @@ impl<T: SignedNonZeroable> Roi<T> {
     /// already-validated data (e.g. a `NonZero` length, min/max of valid rois,
     /// or ranges derived from an existing `Roi`/`Span`). A `NonZeroRange` can
     /// be passed through (re-checked in debug only).
+    #[inline]
     pub fn new_unchecked(x: impl Into<RangeUnchecked<T>>, y: impl Into<RangeUnchecked<T>>) -> Self
     where
         T: Ord + Debug,
@@ -68,6 +71,7 @@ impl<T: SignedNonZeroable> Roi<T> {
         }
     }
 
+    #[inline]
     pub fn width(&self) -> T::NonZero
     where
         T: Copy + Sub<Output = T>,
@@ -75,6 +79,7 @@ impl<T: SignedNonZeroable> Roi<T> {
         self.x.len_non_zero()
     }
 
+    #[inline]
     pub fn height(&self) -> T::NonZero
     where
         T: Copy + Sub<Output = T>,
@@ -114,6 +119,7 @@ impl<T: SignedNonZeroable> Roi<T> {
         }
     }
 
+    #[inline]
     pub fn union(&self, other: &Self) -> Self
     where
         T: Copy + Ord + Debug,
@@ -125,6 +131,7 @@ impl<T: SignedNonZeroable> Roi<T> {
 
     /// Largest roi contained in `self` and `other`, or `None` if they don't overlap
     /// (touching edges don't overlap).
+    #[inline]
     pub fn intersection(&self, other: &Self) -> Option<Self>
     where
         T: Copy + Ord + Debug,
@@ -135,6 +142,7 @@ impl<T: SignedNonZeroable> Roi<T> {
         })
     }
 
+    #[inline]
     pub fn contains(&self, x: &T, y: &T) -> bool
     where
         T: Copy + Ord,

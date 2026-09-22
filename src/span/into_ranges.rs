@@ -13,10 +13,12 @@ pub struct SpanIntoRangesIter<TIter: Iterator, TOut: CreateRange<Item: SignedNon
 impl<TIter: Iterator + ImageDimension, TOut: CreateRange<Item: SignedNonZeroable>> ImageDimension
     for SpanIntoRangesIter<TIter, TOut>
 {
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.parent.roi()
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.parent.width()
     }
@@ -57,6 +59,7 @@ impl<
 {
     type Item = TOut;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let Some(next) = self.parent.next() else {
@@ -88,6 +91,7 @@ impl<
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (lo, hi) = self.parent.size_hint();
         let unreleased = self.unreleased.is_some() as usize;

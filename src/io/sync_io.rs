@@ -88,10 +88,12 @@ pub struct ReaderRangeIterator<R, TRange> {
 }
 
 impl<R, TRange> ImageDimension for ReaderRangeIterator<R, TRange> {
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.roi
     }
 
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.roi.width()
     }
@@ -115,6 +117,7 @@ impl<R: Read, TRange> ReaderRangeIterator<R, TRange> {
 impl<R: Read, TRange: CreateRange<Item = u64>> Iterator for ReaderRangeIterator<R, TRange> {
     type Item = io::Result<TRange>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let mut buf = [0u8; U64_SIZE * 2];
         match read_exact_or_nothing(&mut self.reader, &mut buf) {
@@ -133,6 +136,7 @@ impl<R: Read, TRange: CreateRange<Item = u64>> Iterator for ReaderRangeIterator<
         Some(Ok(TRange::new_debug_checked_zeroable(start, end)))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
     }

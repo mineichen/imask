@@ -52,9 +52,11 @@ impl<I, T> ImageDimension for ClusterSpanIter<I, T>
 where
     I: ImageDimension,
 {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.parent.roi()
     }
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.parent.width()
     }
@@ -67,6 +69,7 @@ where
 {
     type Item = SpanCluster<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<SpanCluster<T>> {
         let mut maybe_span = self.pending_item.take().or_else(|| self.parent.next());
         while let Some(span) = maybe_span {
@@ -127,18 +130,22 @@ pub struct SpanCluster<T> {
 
 impl<T> Iterator for SpanCluster<T> {
     type Item = Span<T>;
+    #[inline]
     fn next(&mut self) -> Option<Span<T>> {
         self.spans.next()
     }
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.spans.size_hint()
     }
 }
 
 impl<T> ImageDimension for SpanCluster<T> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         self.bounds
     }
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.bounds.width()
     }
@@ -217,6 +224,7 @@ where
 /// A span is consumed w.r.t. `span` when it can no longer connect to `span` nor
 /// to any later, larger input: sealed (row gap >= 2) or passed (exactly one row
 /// above and entirely to the left).
+#[inline]
 fn consumed<T>(f: Span<T>, span: Span<T>) -> bool
 where
     T: Ord + Copy + Add<Output = T> + One,
@@ -227,6 +235,7 @@ impl<T> Cluster<T>
 where
     T: Ord + Copy + Debug + Add<Output = T> + Sub<Output = T> + One + UncheckedCast<u32>,
 {
+    #[inline]
     fn from_span(span: Span<T>) -> Self {
         Self {
             spans: vec![span],
@@ -237,6 +246,7 @@ where
         }
     }
 
+    #[inline]
     fn take(&mut self) -> Self {
         let mut spans = Vec::new();
         core::mem::swap(&mut spans, &mut self.spans);
@@ -251,6 +261,7 @@ where
 
     /// `span` is the most recently pulled input span, i.e. it is `>=` every span
     /// already present, so a plain push keeps `spans` sorted.
+    #[inline]
     fn add(&mut self, span: Span<T>) {
         self.min_x = self.min_x.min(span.x.start);
         self.max_x = self.max_x.max(span.x.end);

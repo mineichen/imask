@@ -197,10 +197,12 @@ pin_project! {
 }
 
 impl<R> ImageDimension for AsyncRangeStream<R> {
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.roi
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         self.roi.width()
     }

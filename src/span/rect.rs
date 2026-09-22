@@ -32,6 +32,7 @@ impl<T: SignedNonZeroable + Ord + Debug + Copy + Add<Output = T> + PartialEq> Re
 }
 
 impl<T: UncheckedCast<u32>> ImageDimension for RectSpanIter<T> {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         let x_start = self.span.x.start.cast_unchecked();
         let x_end = self.span.x.end.cast_unchecked();
@@ -47,6 +48,7 @@ impl<T: UncheckedCast<u32>> ImageDimension for RectSpanIter<T> {
         }
     }
 
+    #[inline]
     fn width(&self) -> std::num::NonZero<u32> {
         NonZeroU32::new(self.span.x.end.cast_unchecked() - self.span.x.start.cast_unchecked())
             .expect("X mustn't be zero length")
@@ -58,6 +60,7 @@ impl<T: Ord + One + Copy + Add<Output = T> + Sub<Output = T> + TryInto<usize>> I
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.span.y < self.y_end {
             let r = Some(self.span);
@@ -68,6 +71,7 @@ impl<T: Ord + One + Copy + Add<Output = T> + Sub<Output = T> + TryInto<usize>> I
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         match (self.y_end - self.span.y).try_into() {
             Ok(size) => (size, Some(size)),

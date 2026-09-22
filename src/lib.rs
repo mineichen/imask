@@ -49,6 +49,7 @@ pub struct OrderedRangeItem<TMeta> {
 }
 
 impl<TMeta> OrderedRangeItem<TMeta> {
+    #[inline]
     pub fn comparator(&self) -> (u32, u32) {
         (self.range.start, u32::MAX - self.priority)
     }
@@ -65,15 +66,18 @@ pub trait ImageDimension {
 }
 
 impl<I: ImageDimension + ?Sized> ImageDimension for &mut I {
+    #[inline]
     fn roi(&self) -> Roi<u32> {
         (**self).roi()
     }
 
     #[allow(deprecated)]
+    #[inline]
     fn bounds(&self) -> Rect<u32> {
         (**self).bounds()
     }
 
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         (**self).width()
     }

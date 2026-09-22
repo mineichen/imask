@@ -78,6 +78,7 @@ where
 {
     type Item = Span<T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let row = 'outer: loop {
             let row = self.bitmap.data.get(self.data_y)?;

@@ -30,6 +30,7 @@ where
 {
     type Item = (TExcluded, TIncluded);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (start, end) = if let Some(b) = self.buffered.take() {
             b
@@ -83,6 +84,7 @@ where
         Some((excluded, included))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (lo, hi) = self.iter.size_hint();
         let buffered = self.buffered.is_some() as usize;
@@ -95,10 +97,12 @@ impl<TIter, TIncluded, TExcluded> ImageDimension for SpanToOffsetsIter<TIter, TI
 where
     TIter: ImageDimension,
 {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.iter.width()
     }
 
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.iter.roi()
     }

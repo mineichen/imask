@@ -225,10 +225,12 @@ pub struct SourceIterator<T> {
 impl<T> FusedIterator for SourceIterator<T> where Self: Iterator {}
 
 impl<T> ImageDimension for SourceIterator<T> {
+    #[inline]
     fn width(&self) -> NonZero<u32> {
         self.cell.borrow().0.bounds.width()
     }
 
+    #[inline]
     fn roi(&self) -> crate::Roi<u32> {
         self.cell.borrow().0.bounds
     }
@@ -240,6 +242,7 @@ where
 {
     type Item = RangeInclusive<u64>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let mut x = self.cell.borrow_mut();
         let (col, read_pos) = &mut *x;
@@ -258,6 +261,7 @@ where
         Some(out_range)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let read_pos = self.cell.borrow().1;
         let remaining = self.original_len.saturating_sub(read_pos);

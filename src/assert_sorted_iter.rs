@@ -24,6 +24,7 @@ impl<T: Iterator, TFn: Fn(&T::Item) -> TOrd, TOrd: Ord + Eq + Debug> Iterator
 {
     type Item = T::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let value = self.0.next()?;
         #[cfg(debug_assertions)]
@@ -38,6 +39,7 @@ impl<T: Iterator, TFn: Fn(&T::Item) -> TOrd, TOrd: Ord + Eq + Debug> Iterator
         Some(value)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
     }
