@@ -2,7 +2,7 @@ use std::{
     cmp::Ord,
     fmt::{Debug, Display},
     io,
-    num::{IntErrorKind, NonZero, NonZeroU32},
+    num::{NonZero, NonZeroU32},
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -415,159 +415,8 @@ where
     T::try_from(end - start).map_err(invalid)
 }
 
-/// Builds a [`SortedRanges`] from spans, merging touching spans.
-///
-/// (`new` takes no span) and `add` allows `start > merge_end || excluded.is_empty()`:
-/// the very first span initializes the merge window, equal starts/ends merge touching
-/// spans, and only `start < merge_end` (overlap) is an error.
-struct SortedRangesSpanBuilderInternal<T> {
-    width_u64: u64,
-    offset_x_u64: u64,
-    offset_y_u64: u64,
-    merge_start: u64,
-    merge_end: u64,
-    bounds: Roi<u32>,
-    excluded: Vec<T>,
-    included: Vec<T>,
-}
-
-impl<T> SortedRangesSpanBuilderInternal<T>
-where
-    T: TryFrom<u64, Error: Into<IncompatibleSizeError>>,
-    IncompatibleSizeError: From<T::Error>,
-{
-    fn new(bounds: Roi<u32>, size_hint: usize) -> Self {
-        Self {
-            width_u64: bounds.width().get() as u64,
-            offset_x_u64: bounds.x.start as u64,
-            offset_y_u64: bounds.y.start as u64,
-            merge_start: 0,
-            merge_end: 0,
-            bounds,
-            excluded: Vec::with_capacity(size_hint),
-            included: Vec::with_capacity(size_hint),
-        }
-    }
-
-    fn add<TSpan>(&mut self, span: Span<TSpan>) -> Result<(), IncompatibleSizeError>
-    where
-        TSpan: Copy + TryInto<u64>,
-        IncompatibleSizeError: From<TSpan::Error>,
-    {
-        let global_y: u64 = span.y.try_into()?;
-        // Spans are expected to always stay within the declared bounds
-        // (ImageDimension). A span below the ROI offset violates that invariant
-        // and is therefore a programmer error.
-        let local_y = global_y
-            .checked_sub(self.offset_y_u64)
-            .ok_or(IntErrorKind::NegOverflow)?;
-        let global_x_start: u64 = span.x.start.try_into()?;
-        let global_x_end: u64 = span.x.end.try_into()?;
-        let local_x_start = global_x_start
-            .checked_sub(self.offset_x_u64)
-            .ok_or(IntErrorKind::NegOverflow)?;
-        let local_x_end = global_x_end
-            .checked_sub(self.offset_x_u64)
-            .ok_or(IntErrorKind::NegOverflow)?;
-
-        let span_offset = local_y * self.width_u64;
-        let start = span_offset + local_x_start;
-        let end = span_offset + local_x_end;
-
-        if self.excluded.is_empty() || start > self.merge_end {
-            if !self.excluded.is_empty() {
-                let included = T::try_from(self.merge_end - self.merge_start);
-                self.included.push(included?);
-            }
-            let excluded = T::try_from(start - self.merge_end);
-            self.excluded.push(excluded?);
-            self.merge_start = start;
-            self.merge_end = end;
-        } else if start == self.merge_end {
-            self.merge_end = end;
-        } else {
-            // start < merge_end (and excluded not empty): overlap violates the
-            // sorted & disjoint contract span iterators promise → programmer error.
-            return Err(IntErrorKind::NegOverflow.into());
-        }
-        Ok(())
-    }
-
-    fn build(self) -> Result<SortedRanges<T>, PipelineError> {
-        if self.excluded.is_empty() {
-            return Err(PipelineError::Empty);
-        }
-        let Self {
-            mut included,
-            excluded,
-            merge_start,
-            merge_end,
-            bounds,
-            ..
-        } = self;
-        let include = T::try_from(merge_end - merge_start);
-        included.push(include.map_err(IncompatibleSizeError::from)?);
-        Ok(SortedRanges {
-            included,
-            excluded,
-            bounds,
-        })
-    }
-}
-
-/// Builds a [`SortedRanges`] from spans where [`SortedRangesSpanBuilder::add`] is infallible.
-///
-/// This makes it suitable for use with [`ImaskSet::fold_inline`]: the first error is captured
-/// internally and only surfaced by [`SortedRangesSpanBuilder::build`].
-///
-/// ```
-/// use std::num::NonZeroU32;
-/// use imask::{ImaskSet, Roi, SortedRanges, SortedRangesSpanBuilder, Span};
-///
-/// const SIZE: NonZeroU32 = NonZeroU32::new(10).unwrap();
-/// let roi = Roi::new(10u32..20, 10..20);
-/// let mut builder = SortedRangesSpanBuilder::<u32>::new(roi);
-/// let mut iter = roi.into_spans().fold_inline(builder, |b, s| b.add(*s));
-/// iter.next();
-/// let ranges = iter.finish_all().build().unwrap();
-/// assert_eq!(
-///     SortedRanges::try_from_span_iter(roi.into_spans()).unwrap(),
-///     ranges
-/// );
-/// ```
-pub struct SortedRangesSpanBuilder<T> {
-    builder: SortedRangesSpanBuilderInternal<T>,
-    error: Option<IncompatibleSizeError>,
-}
-
-impl<T> SortedRangesSpanBuilder<T>
-where
-    T: TryFrom<u64>,
-    IncompatibleSizeError: From<T::Error>,
-{
-    pub fn new(bounds: impl Into<Roi<u32>>) -> Self {
-        Self {
-            builder: SortedRangesSpanBuilderInternal::new(bounds.into(), 0),
-            error: None,
-        }
-    }
-
-    pub fn add<TSpan: Copy + TryInto<u64>>(&mut self, span: Span<TSpan>)
-    where
-        IncompatibleSizeError: From<TSpan::Error>,
-    {
-        if self.error.is_none() {
-            self.error = self.builder.add(span).err();
-        }
-    }
-
-    pub fn build(self) -> Result<SortedRanges<T>, PipelineError> {
-        if let Some(error) = self.error {
-            return Err(error.into());
-        }
-        self.builder.build()
-    }
-}
+use crate::span::builder::roi_hint::SortedRangesSpanBuilderInternal;
+use crate::span::builder::tight::SortedRangesTightSpanBuilderInternal;
 
 impl<T> From<Span<T::Sqrt>> for SortedRanges<T>
 where
@@ -590,6 +439,24 @@ where
 }
 
 impl<T> SortedRanges<T> {
+    /// Crate-internal constructor from prebuilt delta-encoded parts.
+    /// Counterpart of [`Self::into_raw_parts`]; exclusively for the span
+    /// builders in `span::builder`.
+    pub(crate) fn new_internal(included: Vec<T>, excluded: Vec<T>, bounds: Roi<u32>) -> Self {
+        Self {
+            included,
+            excluded,
+            bounds,
+        }
+    }
+
+    /// Destructures into the raw delta-encoded parts
+    /// `(included, excluded, bounds)`. Counterpart of [`Self::new_internal`];
+    /// exclusively for the span builders in `span::builder`.
+    pub(crate) fn into_raw_parts(self) -> (Vec<T>, Vec<T>, Roi<u32>) {
+        (self.included, self.excluded, self.bounds)
+    }
+
     #[deprecated = "Use from_span instead, which automatically sets the correct bounds"]
     pub fn new<TRange>(r: NonZeroRange<TRange>, bounds: impl Into<Roi<u32>>) -> Self
     where
@@ -685,74 +552,13 @@ impl<T> SortedRanges<T> {
             declared.width(),
             "width() must equal roi().width()"
         );
-        let size_hint = iter.size_hint().0;
-        let mut builder = SortedRangesSpanBuilderInternal::<T>::new(declared, size_hint);
-
-        let mut min_x = u64::MAX;
-        let mut max_x_end = u64::MIN;
-        let mut min_y = u64::MAX;
-        let mut max_y = u64::MIN;
-
+        let (min, max) = iter.size_hint();
+        let size_hint = max.unwrap_or(min);
+        let mut builder = SortedRangesTightSpanBuilderInternal::<T>::new(declared, size_hint);
         for span in &mut iter {
-            let x_start: u64 = span
-                .x
-                .start
-                .try_into()
-                .map_err(IncompatibleSizeError::from)?;
-            let x_end: u64 = span.x.end.try_into().map_err(IncompatibleSizeError::from)?;
-            let y: u64 = span.y.try_into().map_err(IncompatibleSizeError::from)?;
-            min_x = min_x.min(x_start);
-            max_x_end = max_x_end.max(x_end);
-            min_y = min_y.min(y);
-            max_y = max_y.max(y);
             builder.add(span)?;
         }
-        let mut first = builder.build()?;
-
-        let min_x_32 = u32::try_from(min_x).map_err(IncompatibleSizeError::from)?;
-        let max_x_end_32 = u32::try_from(max_x_end).map_err(IncompatibleSizeError::from)?;
-        let min_y_32 = u32::try_from(min_y).map_err(IncompatibleSizeError::from)?;
-        let max_y_32 = u32::try_from(max_y).map_err(IncompatibleSizeError::from)?;
-        let tight = Roi {
-            x: NonZeroRange::new_unchecked(min_x_32..max_x_end_32),
-            y: NonZeroRange::new_unchecked(min_y_32..max_y_32 + 1),
-        };
-
-        if tight == declared {
-            return Ok(first);
-        }
-
-        if tight.x == declared.x {
-            if tight.y == declared.y {
-                // Only trailing empty rows: flat layout unchanged, shrink height.
-                first.bounds = tight;
-                return Ok(first);
-            }
-            // Same x/width, y-offset off: flat positions shift uniformly by
-            // delta = (tight.y - declared.y) * width. Only the absolute start
-            // (excluded[0]) stores an absolute position, the rest are deltas,
-            // so a single adjustment suffices
-            // (conceptually `buffer.for_each_mut(|v| *v += offset * width)`
-            // on absolute positions).
-            let declared_y_u64 = u64::from(declared.y.start);
-            let tight_y_u64 = u64::from(tight.y.start);
-            let width_u64 = u64::from(declared.width().get());
-            assert!(tight_y_u64 >= declared_y_u64);
-            let delta = (tight_y_u64 - declared_y_u64) * width_u64;
-            let first_u64: u64 = first.excluded[0].cast_unchecked();
-            let adjusted = first_u64
-                .checked_sub(delta)
-                .ok_or(IntErrorKind::NegOverflow)?;
-            first.excluded[0] = T::try_from(adjusted).map_err(IncompatibleSizeError::from)?;
-            first.bounds = tight;
-            return Ok(first);
-        }
-
-        // x-bounds don't match (or y moved outside): row stride changed,
-        // re-encode the spans in-place, reusing the existing buffers.
-        first
-            .map_span_inplace(|source| source.with_roi(tight))
-            .ok_or(PipelineError::Empty)
+        builder.build()
     }
 
     #[cfg(feature = "async-io")]
@@ -1028,6 +834,7 @@ mod tests {
 
     use super::*;
     use crate::{NonZeroRange, Roi};
+    use std::num::IntErrorKind;
 
     const TEST_BOUNDS: Roi<u32> = Roi {
         x: NonZeroRange::<u32>::new_const(0..1000),
@@ -1087,10 +894,7 @@ mod tests {
         let r = SortedRanges::<u16>::from(Span::new(0..5, 0));
         assert_eq!(Span::new(0..5, 0), r.spans::<u8>().next().unwrap());
         let r = SortedRanges::<u64>::from(Span::new(0..10, 0));
-        assert_eq!(
-            Span::new(0..10, 0),
-            r.spans::<u32>().next().unwrap()
-        );
+        assert_eq!(Span::new(0..10, 0), r.spans::<u32>().next().unwrap());
     }
 
     #[cfg(feature = "range-set-blaze-0_5")]
@@ -1123,8 +927,7 @@ mod tests {
 
     #[test]
     fn ranges_starting_at_zero() {
-        let map =
-            SortedRanges::<u32>::try_from_ordered_iter([0u64..1, 5..6].with_roi(TEST_BOUNDS));
+        let map = SortedRanges::<u32>::try_from_ordered_iter([0u64..1, 5..6].with_roi(TEST_BOUNDS));
 
         let map = map.unwrap();
         let collected: Vec<_> = map.iter_roi::<std::ops::Range<u64>>().collect();
@@ -1457,10 +1260,7 @@ mod tests {
     fn try_from_span_iter_u16_max_width_two_rows() -> TestResult {
         const WIDTH: NonZeroU32 = NonZero::new(u16::MAX as u32).unwrap();
         const HEIGHT: NonZeroU32 = NonZero::new(2u32).unwrap();
-        let spans = vec![
-            Span::new(0u16..u16::MAX, 0),
-            Span::new(0u16..u16::MAX, 1),
-        ];
+        let spans = vec![Span::new(0u16..u16::MAX, 0), Span::new(0u16..u16::MAX, 1)];
 
         let result = SortedRanges::<u64>::try_from_span_iter(spans.with_bounds(WIDTH, HEIGHT))?;
 

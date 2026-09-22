@@ -34,6 +34,9 @@
           '';
           policy = pkgs.writeText "policy.json" ''{"default":[{"type":"insecureAcceptAnything"}]}'';
           containername = "imask-isolated-dev";
+          podmanRuntimePath = pkgs.lib.makeBinPath [
+            pkgs.slirp4netns
+          ];
           podmanRun = "${pkgs.podman}/bin/podman run --rm -it "
             + "--network=slirp4netns "
             + "--tmpfs /tmp "
@@ -95,6 +98,7 @@
           apps.isolated-build = {
             type = "app";
             program = toString (pkgs.writeShellScript containername ''
+              export PATH="${podmanRuntimePath}:$PATH"
               ${pkgs.podman}/bin/podman rmi ${containername} || true
               ${pkgs.podman}/bin/podman load \
                 --signature-policy ${policy} \
@@ -106,6 +110,7 @@
             type = "app";
             program = toString (pkgs.writeShellScript "run-isolated" ''
               set -euo pipefail
+              export PATH="${podmanRuntimePath}:$PATH"
               #if ! ${pkgs.podman}/bin/podman image exists ${containername}:latest 2>/dev/null; then
               #  echo "Image ${containername}:latest not found."
               #  echo "Please build and load it first with:"

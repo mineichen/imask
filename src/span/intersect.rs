@@ -326,11 +326,7 @@ mod tests {
     #[test]
     fn multiple_lines() -> TestResult {
         assert_eq!(
-            vec![
-                Span::new(5..10, 0),
-                Span::new(3..10, 1),
-                Span::new(3..7, 2),
-            ],
+            vec![Span::new(5..10, 0), Span::new(3..10, 1), Span::new(3..7, 2),],
             test_intersect(
                 [
                     Span::new(0..10, 0),

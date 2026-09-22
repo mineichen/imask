@@ -938,11 +938,7 @@ mod tests {
 
     #[test]
     fn accumulator_matches_union_overlapping() {
-        let spans = vec![
-            Span::new(0..4, 4),
-            Span::new(5..10, 5),
-            Span::new(8..13, 6),
-        ];
+        let spans = vec![Span::new(0..4, 4), Span::new(5..10, 5), Span::new(8..13, 6)];
         run_both(spans, 100, 100, 4);
     }
 

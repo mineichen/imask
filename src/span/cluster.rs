@@ -496,14 +496,8 @@ mod tests {
             *b"##...#....##",
         ]);
         assert_eq!(groups.len(), 3, "three clusters: {groups:?}");
-        assert_eq!(
-            groups[0],
-            vec![Span::new(0..2, 0), Span::new(0..2, 1)]
-        );
-        assert_eq!(
-            groups[1],
-            vec![Span::new(10..12, 0), Span::new(10..12, 1)]
-        );
+        assert_eq!(groups[0], vec![Span::new(0..2, 0), Span::new(0..2, 1)]);
+        assert_eq!(groups[1], vec![Span::new(10..12, 0), Span::new(10..12, 1)]);
         assert_eq!(groups[2], vec![Span::new(5..6, 1)]);
     }
 

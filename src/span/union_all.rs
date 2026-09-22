@@ -286,11 +286,7 @@ mod tests {
             [Span::new(6..10, 0u16), Span::new(3..8, 1)].with_roi(BOUNDS),
         );
         assert_eq!(
-            vec![
-                Span::new(0..10, 0),
-                Span::new(0..8, 1),
-                Span::new(0..5, 2),
-            ],
+            vec![Span::new(0..10, 0), Span::new(0..8, 1), Span::new(0..5, 2),],
             UnionAll::new([a, b, c]).unwrap().collect::<Vec<_>>()
         );
     }

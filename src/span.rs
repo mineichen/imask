@@ -12,6 +12,7 @@ mod affine_transform;
 #[cfg(test)]
 mod ascii_bitmap;
 mod bounds_builder;
+pub(crate) mod builder;
 mod clip;
 mod cluster;
 mod dilate;
@@ -28,6 +29,7 @@ mod union_all;
 
 pub use affine_transform::*;
 pub use bounds_builder::*;
+pub use builder::*;
 pub use clip::*;
 pub use cluster::*;
 pub use dilate::*;
