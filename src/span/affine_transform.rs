@@ -24,19 +24,27 @@ fn transform_bounds_rect(parent: Roi<u32>, matrix: &Matrix3<f64>) -> Option<Roi<
         transform_point(matrix, left, bottom),
     ];
 
-    let min_x = corners.iter().map(|c| c.0).fold(f64::MAX, f64::min);
-    let min_y = corners.iter().map(|c| c.1).fold(f64::MAX, f64::min);
-    let max_x = corners.iter().map(|c| c.0).fold(f64::MIN, f64::max);
-    let max_y = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max);
+    fp_extent(&corners)
+}
 
-    if max_x < 0.0 || max_y < 0.0 {
+/// Pixels a quad can cover, rounded exactly like [`QuadSpanIter`] does (fixed point),
+/// so spans never exceed it. Rounding in f64 instead differs at e.g. `9.999`.
+fn fp_extent(corners: &[(f64, f64); 4]) -> Option<Roi<u32>> {
+    let xs = corners.map(|c| to_fp(c.0));
+    let ys = corners.map(|c| to_fp(c.1));
+    let min_x = xs.into_iter().min()?;
+    let max_x = xs.into_iter().max()?;
+    let min_y = ys.into_iter().min()?;
+    let max_y = ys.into_iter().max()?;
+
+    if max_x < 0 || max_y < 0 {
         return None;
     }
 
-    let bx = min_x.max(0.0).ceil() as u32;
-    let by = min_y.max(0.0).ceil() as u32;
-    let bx_end = max_x.floor() as u32 + 1;
-    let by_end = max_y.floor() as u32 + 1;
+    let bx = fp_ceil(min_x).max(0) as u32;
+    let by = fp_ceil(min_y).max(0) as u32;
+    let bx_end = fp_floor(max_x) as u32 + 1;
+    let by_end = fp_floor(max_y) as u32 + 1;
 
     Some(Roi {
         x: NonZeroRange::try_from(bx..bx_end).ok()?,
@@ -300,7 +308,8 @@ impl AffineTransformHeap {
         matrix: &Matrix3<f64>,
     ) -> Result<Self, PipelineError> {
         let parent_bounds = spans.roi();
-        let bounds = transform_bounds_rect(parent_bounds, matrix).ok_or(PipelineError::Empty)?;
+        let mut bounds =
+            transform_bounds_rect(parent_bounds, matrix).ok_or(PipelineError::Empty)?;
 
         let mut entries: Vec<HeapEntry> = Vec::new();
         for span in spans {
@@ -311,6 +320,11 @@ impl AffineTransformHeap {
             let corners = quad_corners(matrix, col, row, seg_width);
             let iter = QuadSpanIter::new(&corners);
             if !iter.exhausted() {
+                // Guards against f64 noise between parent and span corners
+                // crossing a fixed-point rounding boundary.
+                if let Some(extent) = fp_extent(&corners) {
+                    bounds = bounds.union(&extent);
+                }
                 entries.push(HeapEntry { iter });
             }
         }
@@ -330,8 +344,9 @@ impl AffineTransformHeap {
             self.heap.push(entry);
         }
 
+        debug_assert!(self.bounds.x.start <= result.x.start);
         debug_assert!(result.x.end <= self.bounds.x.end);
-        debug_assert!(result.y < self.bounds.y.end);
+        debug_assert!(self.bounds.y.contains(&result.y));
 
         Some(result)
     }
@@ -923,5 +938,21 @@ mod tests {
             (pixel_count as i64 - expected as i64).unsigned_abs() <= tolerance as u64,
             "pixel count {pixel_count} too far from expected {expected}"
         );
+    }
+
+    #[test]
+    fn translation_rounding_does_not_exceed_bounds() {
+        // Right edge lands at 9.999: f64 floors to 9, fixed point rounds to 10
+        let spans = Roi::new(0u32..10, 0..1).into_spans();
+        let matrix = Matrix3::new(1.0, 0.0, 0.499, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
+        let heap = AffineTransformHeap::new(spans, &matrix).unwrap();
+        let roi = heap.roi();
+        for span in heap {
+            assert!(
+                roi.x.start <= span.x.start && span.x.end <= roi.x.end,
+                "{span:?} exceeds {roi:?}"
+            );
+            assert!(roi.y.contains(&span.y), "{span:?} exceeds {roi:?}");
+        }
     }
 }
