@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    ops::{Add, Sub},
+    ops::{Add, Mul, Sub},
 };
 
 use num_traits::{One, Zero};
@@ -8,7 +8,8 @@ use num_traits::{One, Zero};
 #[allow(deprecated)]
 use crate::Rect;
 use crate::{
-    CreateRange, NonZeroRange, RangeUnchecked, RectIterator, SignedNonZeroable, UncheckedCast,
+    CreateRange, NonZeroRange, RangeUnchecked, RectIterator, SignedNonZeroable, SortedRanges,
+    UncheckedCast, number::Sqrtable,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -196,6 +197,29 @@ impl<T: SignedNonZeroable> Roi<T> {
     }
 }
 
+/// Infallible, because the pixel count of a `Roi<T::Sqrt>` always fits into `T`
+/// and a `Roi` is never empty.
+impl<T> From<Roi<T::Sqrt>> for SortedRanges<T>
+where
+    T: Sqrtable + Mul<Output = T>,
+    T::Sqrt: SignedNonZeroable + Copy + Into<u32> + Sub<Output = T::Sqrt>,
+{
+    fn from(roi: Roi<T::Sqrt>) -> Self {
+        let bounds = Roi {
+            x: NonZeroRange::new_unchecked(roi.x.start.into()..roi.x.end.into()),
+            y: NonZeroRange::new_unchecked(roi.y.start.into()..roi.y.end.into()),
+        };
+        #[allow(clippy::eq_op, reason = "Avoid additional bound on num_traits::Zero")]
+        let zero = roi.x.start - roi.x.start;
+        // Bounds equal the roi, so all rows are contiguous and form a single range
+        Self::new_internal(
+            vec![T::from(roi.x.len()) * T::from(roi.y.len())],
+            vec![T::from(zero)],
+            bounds,
+        )
+    }
+}
+
 impl Roi<u32> {
     /// Expands the roi by `radius` on all sides.
     ///
@@ -261,6 +285,8 @@ where
 mod tests {
     use std::num::NonZeroU32;
 
+    use crate::{ImageDimension, Span};
+
     use super::*;
 
     const NON_ZERO_10: NonZeroU32 = NonZeroU32::new(10).unwrap();
@@ -269,6 +295,46 @@ mod tests {
     #[should_panic(expected = "X is invalid")]
     fn new_panics_on_empty_x() {
         let _ = Roi::<u32>::new(5..5, 0..10);
+    }
+
+    #[test]
+    fn into_sorted_ranges() {
+        let ranges: SortedRanges<u64> = Roi::new(10u32..12, 10..12).into();
+        assert_eq!(Roi::new(10u32..12, 10..12), ranges.roi());
+        assert_eq!(
+            vec![Span::new(10u32..12, 10), Span::new(10..12, 11)],
+            ranges.spans().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn into_sorted_ranges_matches_span_iter() {
+        let roi = Roi::new(3u16..7, 5..9);
+        let ranges: SortedRanges<u32> = roi.into();
+        let expected =
+            SortedRanges::<u32>::try_from_span_iter(roi.into_spans()).expect("Roi is not empty");
+        assert_eq!(expected, ranges);
+    }
+
+    #[test]
+    fn into_sorted_ranges_max_does_not_overflow() {
+        let ranges: SortedRanges<u32> = Roi::new(0u16..u16::MAX, 0..u16::MAX).into();
+        let max = u32::from(u16::MAX) * u32::from(u16::MAX);
+        assert_eq!(
+            vec![0..max],
+            ranges
+                .iter_roi::<std::ops::Range<u32>>()
+                .collect::<Vec<_>>()
+        );
+
+        let ranges: SortedRanges<u16> = Roi::new(0..u8::MAX, 0..u8::MAX).into();
+        let max = u16::from(u8::MAX) * u16::from(u8::MAX);
+        assert_eq!(
+            vec![0..max],
+            ranges
+                .iter_roi::<std::ops::Range<u16>>()
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
