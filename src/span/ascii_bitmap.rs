@@ -27,7 +27,7 @@ const fn usize_to_nonzero_u32(x: usize) -> NonZeroU32 {
 impl<const WIDTH: usize, const HEIGHT: usize> AsciiBitmap<WIDTH, HEIGHT> {
     pub fn new(data: [[u8; WIDTH]; HEIGHT]) -> Self {
         Self {
-            data: data,
+            data,
             offset_x: 0,
             offset_y: 0,
         }
@@ -175,7 +175,7 @@ mod tests {
             *b"..........",
             *b"..........",
         ]).iter().collect::<Vec<Span<u16>>>();
-        let b = AsciiBitmap::new([[b'.']])
+        let b = AsciiBitmap::new([*b"."])
             .iter()
             .collect::<Vec<Span<u16>>>();
         assert_eq!(a, b);

@@ -183,6 +183,7 @@ impl<T> SortedRanges<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::once;
     use std::num::NonZeroU32;
     use std::ops::{Range, RangeInclusive};
 
@@ -328,14 +329,14 @@ mod tests {
 
     #[test]
     fn truncated_header_one_byte() {
-        let buf = vec![PROTOCOL_VERSION];
+        let buf = [PROTOCOL_VERSION];
         let result = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]);
         expect_unexpected_eof(result);
     }
 
     #[test]
     fn truncated_header_two_bytes() {
-        let buf = vec![PROTOCOL_VERSION, 0x00];
+        let buf = [PROTOCOL_VERSION, 0x00];
         let result = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]);
         expect_unexpected_eof(result);
     }
@@ -360,9 +361,8 @@ mod tests {
 
     #[test]
     fn single_range_roundtrip() {
-        let ranges = vec![100..=200u64];
         let mut buf = Vec::new();
-        let writer = SyncRangeWriter::new(&mut buf, with_roi(ranges));
+        let writer = SyncRangeWriter::new(&mut buf, with_roi(once(100..=200u64)));
         writer.write().unwrap();
         let reader = ReaderRangeIterator::<_, NonZeroRange<u64>>::try_new(&buf[..]).unwrap();
         let result: Vec<_> = reader.collect::<io::Result<Vec<_>>>().unwrap();
@@ -385,7 +385,7 @@ mod tests {
 
         impl Read for FailingReader {
             fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::Other, "test error"))
+                Err(io::Error::other("test error"))
             }
         }
 
@@ -399,15 +399,14 @@ mod tests {
 
         impl Write for FailingWriter {
             fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::Other, "write error"))
+                Err(io::Error::other("write error"))
             }
             fn flush(&mut self) -> io::Result<()> {
                 Ok(())
             }
         }
 
-        let ranges = vec![10..=20u64];
-        let writer = SyncRangeWriter::new(FailingWriter, with_roi(ranges));
+        let writer = SyncRangeWriter::new(FailingWriter, with_roi(once(10..=20u64)));
         let result = writer.write();
         let Err(e) = result else {
             panic!("Expected Custom io error");
@@ -496,7 +495,7 @@ mod tests {
     fn stream_io_result_error_propagates() {
         let ranges: Vec<io::Result<RangeInclusive<u64>>> = vec![
             Ok(10..=20),
-            Err(io::Error::new(io::ErrorKind::Other, "source error")),
+            Err(io::Error::other("source error")),
         ];
         let mut buf = Vec::new();
         let result = SyncRangeWriter::new(&mut buf, with_roi(ranges)).write();

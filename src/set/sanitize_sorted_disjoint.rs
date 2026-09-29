@@ -235,6 +235,7 @@ mod range_set_blaze_0_5_interop {
 mod tests {
 
     use core::ops::RangeInclusive;
+    use std::iter::once;
 
     use super::*;
 
@@ -242,7 +243,7 @@ mod tests {
     pub fn test_1px_sanitize() {
         assert_eq!(
             Some(0u32..=0),
-            SanitizeSortedDisjoint::new([0..=0])
+            SanitizeSortedDisjoint::new(once(0..=0))
                 .map(|x: RangeInclusive<u32>| x)
                 .next()
         );
@@ -277,7 +278,7 @@ mod tests {
                 2368662_u64..=2369039_u64,
             ];
 
-            let merged = SanitizeSortedDisjoint::new(source_ranges.into_iter());
+            let merged = SanitizeSortedDisjoint::new(source_ranges);
             CheckSortedDisjoint::new(merged).for_each(|_| {});
         }
     }
@@ -328,7 +329,7 @@ mod tests {
     )]
     #[allow(clippy::reversed_empty_ranges)]
     fn range_with_end_bigger_start_single() {
-        SanitizeSortedDisjoint::new([10u32..=9]).next();
+        SanitizeSortedDisjoint::new(once(10u32..=9)).next();
         panic!("Panic after wrong item");
     }
 
@@ -443,7 +444,7 @@ mod tests {
 
     #[test]
     fn fused_iterator_returns_none_after_exhaustion() {
-        let mut iter = SanitizeSortedDisjoint::new([1u8..=3]);
+        let mut iter = SanitizeSortedDisjoint::new(once(1u8..=3));
         assert_eq!(iter.next(), Some(1..=3));
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);

@@ -94,6 +94,8 @@ mod range_set_blaze_0_5_interop {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::once;
+
     use super::*;
     use crate::ImaskSet;
 
@@ -112,7 +114,7 @@ mod tests {
 
     #[test]
     fn forwards_image_dimension() {
-        let inner = [0u32..10].with_bounds(WIDTH, WIDTH);
+        let inner = once(0u32..10).with_bounds(WIDTH, WIDTH);
         let expected_bounds = inner.roi();
         let expected_width = inner.width();
         let inspect = inner.inspect_spans(|_| {});

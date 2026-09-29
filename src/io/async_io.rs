@@ -255,6 +255,7 @@ impl<R: AsyncRead> futures_core::Stream for AsyncRangeStream<R> {
 #[cfg(test)]
 mod tests {
 
+    use std::iter::once;
     use std::ops::RangeInclusive;
     use std::{io::ErrorKind, num::NonZeroU32};
 
@@ -403,14 +404,14 @@ mod tests {
 
     #[tokio::test]
     async fn truncated_header_one_byte() {
-        let buf = vec![PROTOCOL_VERSION];
+        let buf = [PROTOCOL_VERSION];
         let result = AsyncRangeStream::new(&buf[..]).await;
         expect_unexpected_eof(result);
     }
 
     #[tokio::test]
     async fn truncated_header_two_bytes() {
-        let buf = vec![PROTOCOL_VERSION, 0x00];
+        let buf = [PROTOCOL_VERSION, 0x00];
         let result = AsyncRangeStream::new(&buf[..]).await;
         expect_unexpected_eof(result);
     }
@@ -435,9 +436,8 @@ mod tests {
 
     #[tokio::test]
     async fn single_range_roundtrip() {
-        let ranges = vec![100..=200u64];
         let mut buf = Vec::new();
-        let writer = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges));
+        let writer = AsyncRangeWriter::new(&mut buf, with_1000_roi(once(100..=200u64)));
         writer.await.unwrap();
         let reader = AsyncRangeStream::new(&buf[..]).await.unwrap();
         let result: Vec<_> = reader.try_collect().await.unwrap();
@@ -468,7 +468,7 @@ mod tests {
                 _cx: &mut Context<'_>,
                 _buf: &mut [u8],
             ) -> Poll<io::Result<usize>> {
-                Poll::Ready(Err(Error::new(ErrorKind::Other, "test error")))
+                Poll::Ready(Err(Error::other("test error")))
             }
         }
 
@@ -490,7 +490,7 @@ mod tests {
                 _cx: &mut Context<'_>,
                 _buf: &[u8],
             ) -> Poll<io::Result<usize>> {
-                Poll::Ready(Err(Error::new(ErrorKind::Other, "write error")))
+                Poll::Ready(Err(Error::other("write error")))
             }
 
             fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -503,8 +503,7 @@ mod tests {
         }
 
         let writer = FailingWriter;
-        let ranges = vec![10..=20u64];
-        let async_writer = AsyncRangeWriter::new(writer, with_1000_roi(ranges));
+        let async_writer = AsyncRangeWriter::new(writer, with_1000_roi(once(10..=20u64)));
         let result = async_writer.await;
         let Err(e) = result else {
             panic!("Expected Custom io error");
@@ -542,7 +541,6 @@ mod tests {
                 futures_util::stream::iter(
                     local_ranges
                         .iter()
-                        .into_iter()
                         .map(|x| std::io::Result::Ok(x.clone())),
                 ),
                 roi,
@@ -602,7 +600,7 @@ mod tests {
     async fn stream_io_result_error_propagates() {
         let ranges: Vec<io::Result<RangeInclusive<u64>>> = vec![
             Ok(10..=20),
-            Err(io::Error::new(io::ErrorKind::Other, "source error")),
+            Err(io::Error::other("source error")),
         ];
         let mut buf = Vec::new();
         let result = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges)).await;
