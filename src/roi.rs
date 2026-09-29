@@ -19,6 +19,26 @@ pub struct Roi<T: SignedNonZeroable> {
     pub y: NonZeroRange<T>,
 }
 
+macro_rules! impl_from {
+    ($src:ty, $dst:ty) => {
+        impl From<Roi<$src>> for Roi<$dst> {
+            #[inline]
+            fn from(value: Roi<$src>) -> Self {
+                Self {
+                    x: value.x.into(),
+                    y: value.y.into(),
+                }
+            }
+        }
+    };
+}
+impl_from!(u8, u16);
+impl_from!(u8, u32);
+impl_from!(u8, u64);
+impl_from!(u16, u32);
+impl_from!(u16, u64);
+impl_from!(u32, u64);
+
 impl<T: SignedNonZeroable + Debug> Debug for Roi<T>
 where
     T::NonZero: Debug,

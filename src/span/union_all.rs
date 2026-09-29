@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn some_empty_iterators() {
-        let a = Span::new(0..10, 0);
+        let a = Span::new(0u32..10, 0);
         let c = Span::new(5..15, 0);
         assert_eq!(
             vec![Span::new(0..15, 0)],

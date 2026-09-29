@@ -17,7 +17,7 @@ use crate::CreateRange;
 )]
 pub struct NonZeroRange<T>(RangeUnchecked<T>);
 
-macro_rules! impl_into {
+macro_rules! impl_from {
     ($src:ty, $dst:ty) => {
         impl From<NonZeroRange<$src>> for NonZeroRange<$dst> {
             #[inline]
@@ -30,12 +30,12 @@ macro_rules! impl_into {
         }
     };
 }
-impl_into!(u8, u16);
-impl_into!(u8, u32);
-impl_into!(u8, u64);
-impl_into!(u16, u32);
-impl_into!(u16, u64);
-impl_into!(u32, u64);
+impl_from!(u8, u16);
+impl_from!(u8, u32);
+impl_from!(u8, u64);
+impl_from!(u16, u32);
+impl_from!(u16, u64);
+impl_from!(u32, u64);
 
 macro_rules! impl_new_const {
     ($src:ty) => {

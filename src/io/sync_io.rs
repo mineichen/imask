@@ -493,10 +493,8 @@ mod tests {
 
     #[test]
     fn stream_io_result_error_propagates() {
-        let ranges: Vec<io::Result<RangeInclusive<u64>>> = vec![
-            Ok(10..=20),
-            Err(io::Error::other("source error")),
-        ];
+        let ranges: Vec<io::Result<RangeInclusive<u64>>> =
+            vec![Ok(10..=20), Err(io::Error::other("source error"))];
         let mut buf = Vec::new();
         let result = SyncRangeWriter::new(&mut buf, with_roi(ranges)).write();
         assert!(matches!(result, Err(e) if e.kind() == io::ErrorKind::Other));
@@ -504,7 +502,7 @@ mod tests {
 
     #[test]
     fn from_serialized_roundtrip_with_offset() {
-        let roi = Roi::new(1..101, 2..202);
+        let roi = Roi::new(1u32..101, 2..202);
 
         let local_ranges: Vec<Range<u64>> = vec![10u64..30, 45..50, 205..210];
         let original =
