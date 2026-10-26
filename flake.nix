@@ -11,8 +11,12 @@
   outputs = inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-      perSystem = { system, pkgs, ... }:
+      perSystem = { system, ... }:
         let
+          pkgs = import inputs.nixpkgs {
+            inherit system;
+            config.allowUnfreePredicate = pkg: builtins.elem (inputs.nixpkgs.lib.getName pkg) [ "claude-code" ];
+          };
           rust = with inputs.fenix.packages.${system}; combine [
             stable.toolchain
           ];
