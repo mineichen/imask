@@ -80,6 +80,7 @@
                 pkgs.ripgrep
                 pkgs.git
                 pkgs.opencode
+                pkgs.claude-code
                 pkgs.busybox
                 (pkgs.writeScriptBin "entrypoint.sh" ''
                   #!${pkgs.bashInteractive}/bin/bash
