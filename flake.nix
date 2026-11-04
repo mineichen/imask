@@ -36,17 +36,36 @@
             echo "===================================="
             cargo --version
           '';
+          # Mirrors rust-analyzer-lsp@claude-plugins-official, which only declares the server.
+          # Built into the image, because /root/.claude isn't persisted between runs.
+          rustAnalyzerLspPlugin = pkgs.writeTextDir "rust-analyzer-lsp/.claude-plugin/plugin.json"
+            (builtins.toJSON {
+              name = "rust-analyzer-lsp";
+              description = "Rust language server for code intelligence and analysis";
+              version = "1.0.0";
+              lspServers.rust-analyzer = {
+                command = "${rust}/bin/rust-analyzer";
+                extensionToLanguage.".rs" = "rust";
+              };
+            });
+          claudeCodeWithLsp = pkgs.writeShellScriptBin "claude" ''
+            exec ${pkgs.claude-code}/bin/claude --plugin-dir ${rustAnalyzerLspPlugin}/rust-analyzer-lsp "$@"
+          '';
           policy = pkgs.writeText "policy.json" ''{"default":[{"type":"insecureAcceptAnything"}]}'';
           containername = "imask-isolated-dev";
           podmanRuntimePath = pkgs.lib.makeBinPath [
-            pkgs.slirp4netns
+            pkgs.passt
           ];
-          podmanRun = "${pkgs.podman}/bin/podman run --rm -it "
-            + "--network=slirp4netns "
-            + "--tmpfs /tmp "
-            + "-v ..:/workspace:z "
-            + "-e HOME=/root "
-            + "${containername}:latest /bin/entrypoint.sh";
+          podmanRun = ''
+            workspace="$(realpath "''${1:-.}")"
+            exec ${pkgs.podman}/bin/podman run --rm -it \
+              --network=pasta \
+              --tmpfs /tmp \
+              -v "$workspace:/workspace:z" \
+              -w "/workspace/$(basename "$workspace")" \
+              -e HOME=/root \
+              ${containername}:latest /bin/entrypoint.sh
+          '';
         in
         {
           devShells.default = pkgs.mkShell({
@@ -84,7 +103,7 @@
                 pkgs.ripgrep
                 pkgs.git
                 pkgs.opencode
-                pkgs.claude-code
+                claudeCodeWithLsp
                 pkgs.busybox
                 (pkgs.writeScriptBin "entrypoint.sh" ''
                   #!${pkgs.bashInteractive}/bin/bash
