@@ -1,5 +1,20 @@
 {
   "nodes": {
+    "devtools": {
+      "locked": {
+        "lastModified": 1794318946,
+        "narHash": "sha256-YOf0IIh+4f/DJETzDBSPYAyn6IC1q1YeBx2knuk5hYk=",
+        "owner": "mineichen",
+        "repo": "nix-devtools",
+        "rev": "c569a1a5df249e829b61b3281b03bfa468aa96f6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mineichen",
+        "repo": "nix-devtools",
+        "type": "github"
+      }
+    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
@@ -72,6 +87,7 @@
     },
     "root": {
       "inputs": {
+        "devtools": "devtools",
         "fenix": "fenix",
         "flake-parts": "flake-parts",
         "nixpkgs": "nixpkgs"

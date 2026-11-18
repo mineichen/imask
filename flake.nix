@@ -7,6 +7,7 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    devtools.url = "github:mineichen/nix-devtools";
   };
   outputs = inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -36,36 +37,23 @@
             echo "===================================="
             cargo --version
           '';
-          # Mirrors rust-analyzer-lsp@claude-plugins-official, which only declares the server.
-          # Built into the image, because /root/.claude isn't persisted between runs.
-          rustAnalyzerLspPlugin = pkgs.writeTextDir "rust-analyzer-lsp/.claude-plugin/plugin.json"
-            (builtins.toJSON {
-              name = "rust-analyzer-lsp";
-              description = "Rust language server for code intelligence and analysis";
-              version = "1.0.0";
-              lspServers.rust-analyzer = {
-                command = "${rust}/bin/rust-analyzer";
-                extensionToLanguage.".rs" = "rust";
-              };
-            });
-          claudeCodeWithLsp = pkgs.writeShellScriptBin "claude" ''
-            exec ${pkgs.claude-code}/bin/claude --plugin-dir ${rustAnalyzerLspPlugin}/rust-analyzer-lsp "$@"
-          '';
-          policy = pkgs.writeText "policy.json" ''{"default":[{"type":"insecureAcceptAnything"}]}'';
-          containername = "imask-isolated-dev";
-          podmanRuntimePath = pkgs.lib.makeBinPath [
-            pkgs.passt
-          ];
-          podmanRun = ''
-            workspace="$(realpath "''${1:-.}")"
-            exec ${pkgs.podman}/bin/podman run --rm -it \
-              --network=pasta \
-              --tmpfs /tmp \
-              -v "$workspace:/workspace:z" \
-              -w "/workspace/$(basename "$workspace")" \
-              -e HOME=/root \
-              ${containername}:latest /bin/entrypoint.sh
-          '';
+          isolated = inputs.devtools.lib.isolated {
+            inherit pkgs inputs;
+            name = "imask-isolated-dev";
+            packages = commonBuildInputs ++ [
+              pkgs.bashInteractive
+              pkgs.ripgrep
+              pkgs.opencode
+              pkgs.busybox
+            ];
+            claude.pluginDirs = [
+              (inputs.devtools.lib.claudeRustAnalyzer {
+                inherit pkgs;
+                rust-analyzer = rust;
+              })
+            ];
+            shellHook = greet;
+          };
         in
         {
           devShells.default = pkgs.mkShell({
@@ -93,56 +81,10 @@
               echo "Optionally: cargo fuzz run cluster_reference -- -max_total_time=240"
             '';
           });
-          packages.isolated-build = pkgs.dockerTools.buildImage {
-            name = containername;
-            tag = "latest";
-            copyToRoot = pkgs.buildEnv {
-              name = containername;
-              paths = commonBuildInputs ++ [
-                pkgs.bashInteractive
-                pkgs.ripgrep
-                pkgs.git
-                pkgs.opencode
-                claudeCodeWithLsp
-                pkgs.busybox
-                (pkgs.writeScriptBin "entrypoint.sh" ''
-                  #!${pkgs.bashInteractive}/bin/bash
-                  ${greet}
-                  exec ${pkgs.bashInteractive}/bin/bash
-                '')
-              ];
-              pathsToLink = [ "/bin" "/lib" "/include" "/share" ];
-            };
-            config = {
-              Env = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" "HOME=/root" ];
-              Cmd = [ "/bin/entrypoint.sh" ];
-              WorkingDir = "/workspace/imask";
-            };
-          };
-          apps.isolated-build = {
+          # nix run .#isolated [dir], see isolated.nix of nix-devtools
+          apps.isolated = {
             type = "app";
-            program = toString (pkgs.writeShellScript containername ''
-              export PATH="${podmanRuntimePath}:$PATH"
-              ${pkgs.podman}/bin/podman rmi ${containername} || true
-              ${pkgs.podman}/bin/podman load \
-                --signature-policy ${policy} \
-                --input ${inputs.self.packages.${system}.isolated-build}
-              ${podmanRun}
-            '');
-          };
-          apps.isolated-nobuild = {
-            type = "app";
-            program = toString (pkgs.writeShellScript "run-isolated" ''
-              set -euo pipefail
-              export PATH="${podmanRuntimePath}:$PATH"
-              #if ! ${pkgs.podman}/bin/podman image exists ${containername}:latest 2>/dev/null; then
-              #  echo "Image ${containername}:latest not found."
-              #  echo "Please build and load it first with:"
-              #  echo "  nix run .#isolated-build"
-              #  exit 1
-              #fi
-              ${podmanRun}
-            '');
+            program = pkgs.lib.getExe isolated;
           };
         };
     };
