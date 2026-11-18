@@ -1,86 +1,49 @@
 # Guarantees
 
-> This is the target state. Not all of it holds today; see
-> [GUARANTEES_PLAN.md](GUARANTEES_PLAN.md) for the plan to get there.
+> Target state, not yet reality. See [GUARANTEES_PLAN.md](GUARANTEES_PLAN.md).
 
-imask checks once, at the boundary, and then relies on its types:
-**only construction can fail.** After that, operations on valid values don't
-overflow and iterators don't fail partway through.
+imask validates up front: at construction, or when an iterator is built.
+After that, nothing overflows and no iterator fails midway.
 
-## The `SortedRanges<T>` invariant
+## `SortedRanges<T, TBounds = T::Sqrt>`
 
-`T` stores flat pixel indices. Coordinates use the type with half the bits, `T::Sqrt`:
+`T` holds flat pixel indices, `TBounds` the coordinates of bounds and spans.
+The struct has no trait bounds; methods carry what they need.
 
-| `T`   | coordinates (`T::Sqrt`) | largest image   |
-|-------|-------------------------|-----------------|
-| `u16` | `u8`                    | 255 × 255       |
-| `u32` | `u16`                   | 65 535 × 65 535 |
-| `u64` | `u32`                   | (2³²−1)²        |
-| `u128`| `u64`                   | (2⁶⁴−1)²        |
+| `T`    | default `TBounds` | largest image   |
+| ------ | ----------------- | --------------- |
+| `u16`  | `u8`              | 255 × 255       |
+| `u32`  | `u16`             | 65 535 × 65 535 |
+| `u64`  | `u32`             | (2³²−1)²        |
+| `u128` | `u64`             | (2⁶⁴−1)²        |
 
-Only these types are supported; `SortedRanges<u8>` doesn't compile.
+Other `TBounds` are allowed, e.g. `SortedRanges<u32, u32>` for a (2³¹−1) × 1 image.
 
-Every `SortedRanges<T>` value satisfies:
+## Invariant
 
-1. **Non-empty:** it holds at least one range, and every range has at least one pixel.
-   Ranges are sorted and disjoint.
-2. **Representable bounds, by type:** the bounds are a `Roi<T::Sqrt>`, so every
-   end fits `T::Sqrt`, exclusive ends included. A 1×1 roi at offset
-   `T::Sqrt::MAX` can't be expressed.
-3. **Contained:** every pixel lies inside `bounds`.
-
-**Why this is enough:** width and height are at most 2ⁿ−1, where n is the bit
-width of `T::Sqrt`. So every flat index computed while iterating stays below
-`W·H + W ≤ (2ⁿ−1)·2ⁿ < T::MAX`, which leaves a full row of headroom, and every
-coordinate fits in `T::Sqrt`. Iteration therefore needs no checks in debug or
-release builds.
-
-`SortedRangesMap` follows the same rules.
+1. At least one range; ranges are non-empty, sorted and disjoint.
+2. Bounds are a `Roi<TBounds>`, so every coordinate fits, exclusive ends included.
+3. `W·H + W ≤ T::MAX`, so every flat index fits `T`. Free for the default
+   `TBounds`, checked at construction otherwise.
+4. Every pixel lies inside the bounds.
 
 ## Promises
 
-- **Only construction fails.** Every checked constructor (from ranges, spans,
-  bytes, …) validates the invariant and returns a `Result`.
-- **`*_unchecked` is a deliberate escape hatch.** `NonZeroRange::new_unchecked`
-  and `Roi::new_unchecked` are for code that has already checked the dimensions,
-  for example `Union`, whose spans can't exceed its bounds. They use
-  `debug_assert!` for their contract and skip the check in release builds,
-  because checking everywhere is too expensive. Violating the contract is a bug.
-- **Combining doesn't fail.** `union` of two `SortedRanges<T>` returns a
-  `SortedRanges<T>`. `intersect`, `subtract` and `clip` return `Option`, where
-  `None` means the result is empty; none of them returns an error. They need no
-  checks: the result's bounds come from the inputs' bounds (at most their
-  hull), so they are again a `Roi<T::Sqrt>`.
-- **Native iteration doesn't fail.** `spans(&self) -> impl Iterator<Item = Span<T::Sqrt>>`
-  returns no `Result`, never panics and checks nothing per item.
-- **Other targets are checked once, before iterating.** `Span<usize>`, `Span<u8>`,
-  local ranges, or global ranges at a different width are available through
-  `try_*` methods. These check the bounds against the target when the iterator
-  is built, never per item. A narrower target works whenever the bounds fit it.
-- **Leaving the domain is explicit.** Operations that can grow past `T::Sqrt`
-  (dilate, translate, affine transform) either fail at construction or clip to
-  a roi the caller gives.
-- **`Sqrtable` is the only bound on the type.** `SortedRanges<T: Sqrtable>`
-  stores its bounds as `Roi<T::Sqrt>`. Every other bound (casts, arithmetic)
-  goes on the methods that need it.
+- **Fallible means `try_*`.** Everything else is infallible.
+- **Same types never fail.** `spans()` yields `Span<TBounds>`. `intersect`,
+  `subtract` and `clip` return `Option` (`None` = empty).
+- **Except `union`:** the hull can outgrow `T`, so `union` is infallible only
+  for the default `TBounds`, and `try_union` otherwise.
+- **Mixed types are checked once.** Another span type, another `TBounds`,
+  ranges or another width: `try_*` checks the bounds when the iterator is
+  built, never per item.
+- **`*_unchecked` trusts the caller.** It's meant for code that has already
+  checked the dimensions (e.g. `Union`) and is only `debug_assert!`ed. A
+  violation is a bug.
+- **Debug checks every unchecked step; release trusts the invariant.** A broken
+  invariant gives wrong results, never UB.
 
-## Span pipelines
+---
 
-- An iterator's `ImageDimension::roi()` contains every span it yields.
-- Combinators validate in their constructor (`Result<_, PipelineError>`), so
-  `next()` never fails because of sizes.
-- Types carry trust. Spans that come from valid `SortedRanges` and pass only
-  through combinators that keep them inside the domain (union, intersect,
-  subtract, clip) can be collected back without a fallible step. Spans from
-  foreign iterators are validated while they are collected.
-
-## Debug vs. release
-
-- **Debug** builds check every unchecked step: arithmetic overflow, a
-  `debug_assert!` on every narrowing cast (`UncheckedCast`), and the full
-  invariant after every internal construction. A broken invariant panics at
-  the first wrong step.
-- **Release** builds rely on the invariant and skip per-item checks. If an
-  invariant ever breaks (because of an imask bug or a broken `*_unchecked`
-  contract), results are wrong, but there is no undefined behaviour: no
-  `unsafe` code depends on these invariants.
+*Editing this file:* it is written for humans. Keep it very concise and limited
+to the most important facts. Details and rationale go in GUARANTEES_PLAN.md.
