@@ -840,6 +840,12 @@ mod tests {
     use crate::{NonZeroRange, Roi};
     use std::num::IntErrorKind;
 
+    /// The message of a failed integer conversion. Not a literal, the wording
+    /// of std changes between toolchains
+    fn int_conversion_error() -> String {
+        u8::try_from(u16::MAX).expect_err("Doesn't fit").to_string()
+    }
+
     const TEST_BOUNDS: Roi<u32> = Roi {
         x: NonZeroRange::<u32>::new_const(0..1000),
         y: NonZeroRange::<u32>::new_const(0..1000),
@@ -1043,7 +1049,10 @@ mod tests {
         let error =
             SortedRanges::<u8>::try_from_ordered_iter([10u32..20, 276..280].with_roi(TEST_BOUNDS))
                 .unwrap_err();
-        assert!(error.to_string().contains("out of range"), "{error}");
+        assert!(
+            error.to_string().contains(&int_conversion_error()),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1052,7 +1061,10 @@ mod tests {
             core::iter::once(10u32..280).with_roi(TEST_BOUNDS),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("out of range"), "{error}");
+        assert!(
+            error.to_string().contains(&int_conversion_error()),
+            "{error}"
+        );
     }
     #[test]
     fn zero_ranges_cause_error() {

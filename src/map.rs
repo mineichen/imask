@@ -317,6 +317,12 @@ mod tests {
 
     use super::*;
 
+    /// The message of a failed integer conversion. Not a literal, the wording
+    /// of std changes between toolchains
+    fn int_conversion_error() -> String {
+        u8::try_from(u16::MAX).expect_err("Doesn't fit").to_string()
+    }
+
     const ROI: Roi<u32> = Roi {
         x: NonZeroRange::<u32>::new_const(0..1000),
         y: NonZeroRange::<u32>::new_const(0..1000),
@@ -468,7 +474,7 @@ mod tests {
             [(10u32..20, "first"), (276..280, "second")].with_roi(ROI),
         )
         .unwrap_err();
-        assert!(error.contains("out of range"), "{error}");
+        assert!(error.contains(&int_conversion_error()), "{error}");
     }
 
     #[test]
@@ -477,7 +483,7 @@ mod tests {
             [(10u32..280, "first")].with_roi(ROI),
         )
         .unwrap_err();
-        assert!(error.contains("out of range"), "{error}");
+        assert!(error.contains(&int_conversion_error()), "{error}");
     }
     #[test]
     fn zero_ranges_cause_error() {

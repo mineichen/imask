@@ -175,9 +175,7 @@ mod tests {
             *b"..........",
             *b"..........",
         ]).iter().collect::<Vec<Span<u16>>>();
-        let b = AsciiBitmap::new([*b"."])
-            .iter()
-            .collect::<Vec<Span<u16>>>();
+        let b = AsciiBitmap::new([*b"."]).iter().collect::<Vec<Span<u16>>>();
         assert_eq!(a, b);
     }
 }

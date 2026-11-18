@@ -539,9 +539,7 @@ mod tests {
             &mut buf,
             WithRoi::new(
                 futures_util::stream::iter(
-                    local_ranges
-                        .iter()
-                        .map(|x| std::io::Result::Ok(x.clone())),
+                    local_ranges.iter().map(|x| std::io::Result::Ok(x.clone())),
                 ),
                 roi,
             ),
@@ -598,10 +596,8 @@ mod tests {
 
     #[tokio::test]
     async fn stream_io_result_error_propagates() {
-        let ranges: Vec<io::Result<RangeInclusive<u64>>> = vec![
-            Ok(10..=20),
-            Err(io::Error::other("source error")),
-        ];
+        let ranges: Vec<io::Result<RangeInclusive<u64>>> =
+            vec![Ok(10..=20), Err(io::Error::other("source error"))];
         let mut buf = Vec::new();
         let result = AsyncRangeWriter::new(&mut buf, with_1000_roi(ranges)).await;
         assert!(matches!(result, Err(e) if e.kind() == ErrorKind::Other));
