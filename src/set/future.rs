@@ -8,7 +8,7 @@ use futures_core::Stream;
 
 use crate::{CreateRange, ImageDimension};
 
-use super::{Builder, SortedRanges};
+use crate::sorted_ranges::{Builder, SortedRanges};
 
 impl<T> SortedRanges<T> {
     pub fn try_from_ordered_stream<TStream, TRange>(

@@ -6,7 +6,7 @@ use std::num::IntErrorKind;
 
 use crate::{IncompatibleSizeError, PipelineError, Roi, Span};
 
-use crate::set::SortedRanges;
+use crate::sorted_ranges::SortedRanges;
 
 /// Builds a [`SortedRanges`] from spans, merging touching spans.
 ///

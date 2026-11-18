@@ -9,7 +9,7 @@ use crate::{
     ImaskSet, IncompatibleSizeError, NonZeroRange, PipelineError, Roi, Span, UncheckedCast,
 };
 
-use crate::set::SortedRanges;
+use crate::sorted_ranges::SortedRanges;
 
 use super::roi_hint::SortedRangesSpanBuilderInternal;
 
